@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""安装程序 GUI — 向日葵风格（左侧导航 + 右内容 + 自绘复选框）"""
+"""安装程序 GUI — 左侧导航 + 右侧可滚动软件列表 + Text 日志"""
 
 import sys
 import threading
 from pathlib import Path
-from tkinter import Tk, Canvas, Button, Frame, Text, filedialog
+from tkinter import Tk, Canvas, Button, Frame, Text, Scrollbar, filedialog, Label
 from typing import List
 
 from src.core import load_app_items, SoftwareItem, InstallRunner
@@ -25,7 +25,6 @@ LOG_FONT     = ('Consolas', 9)
 
 
 def _create_rounded_rect(canvas, x1, y1, x2, y2, r=8, **kw):
-    """用 polygon 模拟圆角矩形"""
     kw.pop('radius', None)
     pts = [
         x1+r, y1,  x2-r, y1,  x2, y1,
@@ -98,7 +97,6 @@ class FlatCheckbutton:
             self._anim = self._target
 
     def set_checked(self, state: bool):
-        """强制设状态，不用动画"""
         self._checked = state
         self._anim = 1.0 if state else 0.0
         fill = ACCENT if state else '#ffffff'
@@ -119,6 +117,40 @@ class FlatCheckbutton:
                 self.canvas.delete(item)
 
 
+class ScrollableCanvas(Frame):
+    """带垂直滚动条的 Canvas 容器"""
+
+    def __init__(self, parent, **kw):
+        super().__init__(parent, **kw)
+        self.canvas = Canvas(self, highlightthickness=0, bg=BG)
+        self.vbar = Scrollbar(self, orient='vertical', command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.vbar.set)
+
+        self.vbar.pack(side='right', fill='y')
+        self.canvas.pack(side='left', fill='both', expand=True)
+
+        self._interior = interior = Frame(self.canvas, bg=BG)
+        self._interior_id = self.canvas.create_window((0, 0), window=interior, anchor='nw', tags='interior')
+
+        def _configure_interior(event):
+            size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
+            self.canvas.configure(scrollregion=(0, 0, *size))
+            if interior.winfo_reqwidth() != self.canvas.winfo_width():
+                self.canvas.itemconfig(self._interior_id, width=self.canvas.winfo_width())
+
+        interior.bind('<Configure>', _configure_interior)
+        self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig(
+            self._interior_id, width=e.width))
+        # 鼠标滚轮支持
+        self.canvas.bind_all('<MouseWheel>', self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+
+    def interior(self):
+        return self._interior
+
+
 class InstallGUI:
     def __init__(self, root: Tk):
         self.root = root
@@ -126,8 +158,6 @@ class InstallGUI:
         self.root.configure(bg=BG)
         self.root.minsize(820, 560)
         self.root.geometry('900x620')
-        self._log_ids = []
-        self._log_texts = []
 
         ico = Path(__file__).resolve().parent.parent / 'ico' / 'app.ico'
         if ico.exists():
@@ -143,8 +173,8 @@ class InstallGUI:
         self._running = False
         self._all_checked = True
 
-        # --- 布局：左侧窄导航 + 右侧主区 ---
-        # 左边框
+        # ── 布局 ──
+        # 左侧导航
         self._sidebar = Frame(self.root, bg=SIDEBAR_BG, width=180)
         self._sidebar.pack(fill='y', side='left')
         self._sidebar.pack_propagate(False)
@@ -154,93 +184,77 @@ class InstallGUI:
         self._sidebar_title.pack()
         self._sidebar_title.create_text(90, 40, text='\U0001f4e6',
                                         font=(FONT[0], 36), fill=SIDEBAR_ACT)
-        self._sidebar_title.create_text(90, 100, text='安装助手',
+        self._sidebar_title.create_text(90, 78, text='安装助手',
                                         font=(FONT[0], 16, 'bold'), fill=SIDEBAR_ACT)
-        self._sidebar_title.create_text(90, 120, text='一键部署工具',
+        self._sidebar_title.create_text(90, 100, text='一键部署工具',
                                         font=(FONT[0], 10), fill=SIDEBAR_TEXT)
 
-        # 主区域（canvas + 底部按钮）
+        # 右侧主区域
         main_frame = Frame(self.root, bg=BG)
         main_frame.pack(fill='both', expand=True, side='right')
 
-        # Canvas（软件列表）
-        self._canvas = Canvas(main_frame, highlightthickness=0, bg=BG)
-        self._canvas.pack(fill='both', expand=True, side='top')
-        self._canvas.bind('<Configure>', self._on_resize)
+        # -- 顶部工具栏（标题、路径、刷新、浏览） --
+        top_bar = Frame(main_frame, bg=BG, height=90)
+        top_bar.pack(fill='x', side='top')
 
-        # 日志区（用 Text widget，自带滚动，不受 canvas 清空影响）
+        self._top_canvas = Canvas(top_bar, highlightthickness=0, bg=BG, height=90)
+        self._top_canvas.pack(fill='x', expand=True)
+
+        # -- 可滚动的软件列表 --
+        self._scroll_frame = ScrollableCanvas(main_frame, bg=BG)
+        self._scroll_frame.pack(fill='both', expand=True, side='top')
+
+        # -- 日志区 --
         log_frame = Frame(main_frame, bg=LOG_BG, height=80)
         log_frame.pack(fill='x', side='bottom')
         log_frame.pack_propagate(False)
 
         self._log_text = Text(
-            log_frame,
-            font=LOG_FONT,
+            log_frame, font=LOG_FONT,
             bg=LOG_BG, fg=LOG_TEXT,
-            relief='flat', bd=0,
-            padx=8, pady=4,
-            wrap='word',
-            state='disabled',
-            height=4,
+            relief='flat', bd=0, padx=8, pady=4,
+            wrap='word', state='disabled', height=4,
         )
         self._log_text.pack(fill='both', expand=True)
 
-        # 底部按钮栏
+        # -- 底部按钮栏 --
         self._btn_frame = Frame(main_frame, bg=BG, height=48)
         self._btn_frame.pack(fill='x', side='bottom')
         self._btn_frame.pack_propagate(False)
 
-        btn_sel = Button(
-            self._btn_frame, text='全选 / 取消',
-            font=(FONT[0], 11), bg='#e8e8e8', fg=TEXT_MAIN,
-            relief='flat', bd=0, padx=12, pady=4,
-            activebackground='#d0d0d0', command=self._toggle_all,
-        )
-        btn_sel.pack(side='left', padx=(24, 8), pady=8)
+        Button(self._btn_frame, text='全选 / 取消',
+               font=(FONT[0], 11), bg='#e8e8e8', fg=TEXT_MAIN,
+               relief='flat', bd=0, padx=12, pady=4,
+               activebackground='#d0d0d0', command=self._toggle_all,
+               ).pack(side='left', padx=(24, 8), pady=8)
 
-        self._btn_quit = Button(
-            self._btn_frame, text='退出',
-            font=(FONT[0], 11), bg='#e8e8e8', fg=TEXT_MAIN,
-            relief='flat', bd=0, padx=12, pady=4,
-            activebackground='#d0d0d0', command=self.root.destroy,
-        )
-        self._btn_quit.pack(side='right', padx=8, pady=8)
+        Button(self._btn_frame, text='退出',
+               font=(FONT[0], 11), bg='#e8e8e8', fg=TEXT_MAIN,
+               relief='flat', bd=0, padx=12, pady=4,
+               activebackground='#d0d0d0', command=self.root.destroy,
+               ).pack(side='right', padx=8, pady=8)
 
-        self._btn_install = Button(
-            self._btn_frame, text='\u25b6  开始安装',
-            font=(FONT[0], 13, 'bold'), bg=ACCENT, fg='white',
-            relief='flat', bd=0, padx=20, pady=4,
-            activebackground='#005a9e', command=self._install,
-        )
-        self._btn_install.pack(side='right', padx=(8, 24), pady=8)
+        Button(self._btn_frame, text='\u25b6  开始安装',
+               font=(FONT[0], 13, 'bold'), bg=ACCENT, fg='white',
+               relief='flat', bd=0, padx=20, pady=4,
+               activebackground='#005a9e', command=self._install,
+               ).pack(side='right', padx=(8, 24), pady=8)
 
-        # 等窗口显示后再扫描
+        self._draw_top_bar()
         self.root.after(200, self._safe_scan)
 
-    def _safe_scan(self):
-        self._canvas.update_idletasks()
-        self._scan()
-
-    def _on_resize(self, event=None):
-        self._canvas.delete('all')
-        w = self._canvas.winfo_width()
-        h = self._canvas.winfo_height()
-        if w < 100 or h < 100:
-            return
-        self._draw(w, h)
-
-    def _draw(self, w, h):
-        c = self._canvas
+    def _draw_top_bar(self):
+        c = self._top_canvas
+        c.delete('all')
+        w = c.winfo_width()
+        if w < 50:
+            w = 800
         cx = 16
         cw = w - 32
-        self._cx = cx
-        self._cw = cw
 
-        # 标题
         c.create_text(cx, 20, text='选择要安装的软件',
                       font=(FONT[0], 18, 'bold'), fill=TEXT_MAIN, anchor='w')
 
-        # 路径行
         py = 48
         c.create_text(cx, py, text='\U0001f4c2 安装包:', font=(FONT[0], 10),
                       fill=TEXT_SEC, anchor='w')
@@ -249,6 +263,8 @@ class InstallGUI:
 
         btn_h = 26
         btn_top = py - btn_h//2
+
+        self._top_canvas_width = cw  # 保存供后续刷新
 
         # 刷新按钮
         _create_rounded_rect(c, cx+cw-175, btn_top, cx+cw-90, btn_top+btn_h,
@@ -264,74 +280,75 @@ class InstallGUI:
                       fill='white', font=(FONT[0], 10, 'bold'), tags='browse')
         c.tag_bind('browse', '<Button-1>', lambda e: self._browse())
 
-        # ── 表头 ──
-        col_name  = 8
-        col_file  = 230
-        col_type  = 420
-        col_size_r = -10
-
+        # 表头
         hdr_y = 78
-        c.create_text(cx+col_name, hdr_y, text='软件名称', font=(FONT[0], 9, 'bold'),
+        c.create_text(cx+8, hdr_y, text='软件名称', font=(FONT[0], 9, 'bold'),
                       fill=TEXT_SEC, anchor='w')
-        c.create_text(cx+col_file, hdr_y, text='文件名', font=(FONT[0], 9, 'bold'),
+        c.create_text(cx+230, hdr_y, text='文件名', font=(FONT[0], 9, 'bold'),
                       fill=TEXT_SEC, anchor='w')
-        c.create_text(cx+col_type, hdr_y, text='类型', font=(FONT[0], 9, 'bold'),
+        c.create_text(cx+420, hdr_y, text='类型', font=(FONT[0], 9, 'bold'),
                       fill=TEXT_SEC, anchor='w')
-        c.create_text(cx+cw+col_size_r, hdr_y, text='大小', font=(FONT[0], 9, 'bold'),
+        c.create_text(cx+cw-10, hdr_y, text='大小', font=(FONT[0], 9, 'bold'),
                       fill=TEXT_SEC, anchor='e')
 
-        # ── 日志区（用 Text widget，底部不再画日志框） ──
-        self._list_top = 92
-        self._list_bot = h - 10
+    def _safe_scan(self):
+        self._top_canvas.update_idletasks()
+        self._draw_top_bar()
+        self._scan()
 
-        self._cols = (col_name, col_file, col_type, col_size_r)
-        # 重新渲染列表
+    def _scan(self):
+        self._log(f'扫描: {self._app_dir.resolve()}')
+        self._items = load_app_items(self._app_dir)
+        self._all_checked = True
         self._render_items()
+        self._log(f'找到 {len(self._items)} 个安装包')
 
-    def _clear_list(self):
+    def _render_items(self):
+        """在可滚动的 interior Frame 里画每一行"""
+        # 清空旧的列表
         for cb in self._checkboxes:
             cb.destroy()
         self._checkboxes.clear()
-        self._canvas.delete('item*')
-
-    def _render_items(self):
-        c = self._canvas
-        self._clear_list()
-        cx, cw = self._cx, self._cw
-        cols = getattr(self, '_cols', (8, 230, 420, -10))
-        y = self._list_top
-        rh = 48
+        interior = self._scroll_frame.interior()
+        for w in interior.winfo_children():
+            w.destroy()
 
         if not self._items:
-            c.create_text(cx+cw//2, y+60,
-                          text='暂无安装包\n请将 .exe/.msi 放入 app 目录',
-                          font=(FONT[0], 12), fill=TEXT_SEC,
-                          justify='center', tags='item_empty')
+            Label(interior, text='暂无安装包\n请将 .exe/.msi 放入 app 目录',
+                  font=(FONT[0], 12), fg=TEXT_SEC, bg=BG,
+                  justify='center').pack(pady=40)
             return
 
+        # 每个软件一行，用一个 Frame
+        rh = 48
+        cw = max(600, self._top_canvas.winfo_width() - 32)
+        cw = max(cw, getattr(self, '_top_canvas_width', 600))
+
         for i, item in enumerate(self._items):
-            if y + rh > self._list_bot:
-                break
-            bg = '#f5f5f5' if i % 2 == 0 else '#ffffff'
-            c.create_rectangle(cx, y, cx+cw, y+rh,
-                               fill=bg, outline='', tags='item_bg')
+            row = Frame(interior, bg='#f5f5f5' if i % 2 == 0 else '#ffffff',
+                        height=rh)
+            row.pack(fill='x', side='top')
+            row.pack_propagate(False)
+
+            # 用 Canvas 画这一行的内容（复选框 + 文字）
+            row_canvas = Canvas(row, highlightthickness=0,
+                                bg='#f5f5f5' if i % 2 == 0 else '#ffffff',
+                                height=rh)
+            row_canvas.pack(fill='both', expand=True)
 
             sz = self._fmt_size(item.filepath.stat().st_size)
             tt = 'MSI' if item.installer_type == 'msi' else 'EXE'
 
-            cb = FlatCheckbutton(c, cx+4, y + (rh - 20)//2,
+            cb = FlatCheckbutton(row_canvas, 16, (rh - 20)//2,
                                  text=item.name, subtext=item.filename)
             self._checkboxes.append(cb)
 
-            # 文件名列
-            c.create_text(cx+cols[1], y+rh//2, text=item.filename,
-                          font=(FONT[0], 9), fill=TEXT_SEC, anchor='w', tags='item_bg')
-            # 类型 + 大小
-            c.create_text(cx+cols[2], y+rh//2, text=f'[{tt}]',
-                          font=(FONT[0], 10), fill=ACCENT, anchor='w', tags='item_bg')
-            c.create_text(cx+cw+cols[3], y+rh//2, text=sz,
-                          font=(FONT[0], 10), fill=TEXT_SEC, anchor='e', tags='item_bg')
-            y += rh
+            row_canvas.create_text(230, rh//2, text=item.filename,
+                                   font=(FONT[0], 9), fill=TEXT_SEC, anchor='w')
+            row_canvas.create_text(420, rh//2, text=f'[{tt}]',
+                                   font=(FONT[0], 10), fill=ACCENT, anchor='w')
+            row_canvas.create_text(cw - 10, rh//2, text=sz,
+                                   font=(FONT[0], 10), fill=TEXT_SEC, anchor='e')
 
     def _log(self, msg):
         self._log_text.configure(state='normal')
@@ -344,22 +361,8 @@ class InstallGUI:
         d = filedialog.askdirectory(initialdir=str(self._app_dir))
         if d:
             self._app_dir = Path(d)
-            # 强制重绘 + 扫描
-            w = self._canvas.winfo_width()
-            h = self._canvas.winfo_height()
-            if w > 100 and h > 100:
-                self._canvas.delete('all')
-                self._draw(w, h)
+            self._draw_top_bar()
             self._scan()
-
-    def _scan(self):
-        self._log(f'扫描: {self._app_dir.resolve()}')
-        self._items = load_app_items(self._app_dir)
-        self._all_checked = True
-        self._render_items()
-        self._log(f'找到 {len(self._items)} 个安装包')
-        if self._items and self._checkboxes:
-            self._log(f'包名示例: {self._items[0].filename}')
 
     def _toggle_all(self):
         if not self._checkboxes:
@@ -404,11 +407,11 @@ class InstallGUI:
 
     @staticmethod
     def _fmt_size(b):
-        for unit in ('B', 'KB', 'MB', 'GB'):
+        for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
             if b < 1024:
                 return f'{b:.0f} {unit}'
             b //= 1024
-        return f'{b:.1f} TB'
+        return f'{b:.0f} TB'
 
 
 def main():
