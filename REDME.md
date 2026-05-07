@@ -1,4 +1,4 @@
-# 软件安装助手 🖥️
+# 软件安装助手 🥟
 
 新电脑到手后一键安装常用软件。**带图形界面，不用记命令。**
 
@@ -11,10 +11,9 @@
 ```
 sowftware/
 ├── app/                    ← 你把安装包放这里
-│   ├── DingTalk_v7.5.exe
-│   ├── WeCom_Setup.exe
-│   ├── Foxmail_7.2.25.exe
-│   └── ChromeSetup.exe     ← 这个可以自动下载（可选）
+│   ├── WeChatWin_4.1.9.exe
+│   ├── ChromeSetup.exe
+│   └── dingtalk_downloader.exe
 ```
 
 > 支持任何 .exe / .msi 文件，不做限制，你要装什么就放什么。
@@ -31,27 +30,40 @@ python run.py
 
 | 功能 | 说明 |
 |------|------|
-| 🔄 重新扫描 | 修改了 app/ 目录后刷新列表 |
-| 📁 安装包浏览 | 可自定义 app/ 和 cache/ 路径 |
-| ✅ 勾选安装 | 默认全选，可手动取消 |
-| 📝 实时日志 | 安装过程实时显示 |
-| 仅下载 | 模拟/测试模式，只走流程不真装 |
+| 🔄 刷新 | 修改了 app/ 目录后刷新列表 |
+| 📁 浏览 | 自定义 app/ 目录路径 |
+| ✅ 全选/取消 | 一键切换所有勾选状态 |
+| 📝 实时日志 | 安装过程实时显示（Text 控件，自动滚动） |
+| 🚪 退出 | 关闭程序 |
 
 ### 4. 打包成 exe（推荐）
 
 在 Windows 上跑一次（只需一次），以后新电脑直接双击 `.exe`：
 
 ```bash
-pip install pyinstaller
-pyinstaller --onefile --name 安装助手 --add-data "app;app" run.py
+# 安装打包工具
+python -m pip install pyinstaller
+
+# 打包（无黑框 + 自定义图标）
+pyinstaller --onefile --noconsole --name 安装助手 ^
+  --add-data "ico;ico" --icon=ico\app.ico --distpath . run.py
 ```
 
-生成 `dist/安装助手.exe`，复制到 U 盘，新电脑上双击就行。
+如果不需要自定义图标，简化版：
+
+```bash
+pyinstaller --onefile --noconsole --name 安装助手 run.py
+```
+
+生成 `安装助手.exe`，复制到 U 盘，新电脑上**右键 → 以管理员身份运行**。
+
+> 建议 exe 和 `app/` 文件夹放在 U 盘同一级目录，方便增删安装包。
 
 ### 5. Windows 打包注意事项
 
-- 管理员身份运行（部分软件静默安装需要）
-- 保持 `app/` 目录和 exe 在同一层目录
+- **管理员身份运行**：部分软件静默安装需要管理员权限
+- app/ 目录保持和 exe 同一层级
+- 用 `--noconsole` 避免弹出 CMD 黑框
 
 ## 静默参数说明
 
@@ -73,6 +85,7 @@ sowftware/
 │   └── gui.py              # 图形界面
 ├── app/                    # 你放安装包的地方
 ├── cache/                  # 自动下载的缓存目录
+├── ico/                    # 程序图标
 └── REDME.md
 ```
 
@@ -80,4 +93,4 @@ sowftware/
 
 - Python 3.8+（使用前安装）
 - 或打包后的 `.exe`（零依赖，双击运行）
-- Windows 系统（安装需要）
+- Windows 系统（安装需要管理员权限）
