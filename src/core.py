@@ -84,11 +84,11 @@ def guess_silent_args(ext: str, filename: str = '') -> List[str]:
 
 
 def load_app_items(app_dir: Path) -> List[SoftwareItem]:
-    """扫描 app/ 目录，列出可安装的软件包"""
+    """递归扫描目录（含子目录），列出可安装的软件包"""
     if not app_dir.exists():
         return []
     items: List[SoftwareItem] = []
-    for f in sorted(app_dir.iterdir()):
+    for f in sorted(app_dir.rglob('*')):
         if not f.is_file():
             continue
         ext = f.suffix.lower()
