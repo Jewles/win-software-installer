@@ -14,119 +14,78 @@ from urllib.parse import urlparse, quote
 from urllib.request import Request, urlopen
 
 # ═══════════════════════════════════════════════
-# 可信软件源数据库（手动维护，高优先级）
+# 可信软件源数据库（从外部配置文件加载）
 # ═══════════════════════════════════════════════
-TRUSTED_SOURCES: Dict[str, List[Dict]] = {
-    "微信": [
-        {"url": "https://pc.qq.com/detail/0/detail_26320.html", "source": "腾讯软件中心"},
-    ],
-    "qq": [
-        {"url": "https://pc.qq.com/detail/1/detail_26485.html", "source": "腾讯软件中心"},
-    ],
-    "tim": [
-        {"url": "https://pc.qq.com/detail/0/detail_25696.html", "source": "腾讯软件中心"},
-    ],
-    "企业微信": [
-        {"url": "https://work.weixin.qq.com/", "source": "企业微信官网"},
-    ],
-    "腾讯会议": [
-        {"url": "https://meeting.tencent.com/download/", "source": "腾讯会议官网"},
-    ],
-    "钉钉": [
-        {"url": "https://www.dingtalk.com/download/", "source": "钉钉官网"},
-    ],
-    "chrome": [
-        {"url": "https://www.google.com/chrome/", "source": "Chrome官网"},
-    ],
-    "7zip": [
-        {"url": "https://www.7-zip.org/", "source": "7-Zip官网"},
-        {"url": "https://github.com/ip7z/7zip/releases", "source": "GitHub"},
-    ],
-    "7-zip": [
-        {"url": "https://www.7-zip.org/", "source": "7-Zip官网"},
-    ],
-    "vscode": [
-        {"url": "https://code.visualstudio.com/Download", "source": "VS Code官网"},
-    ],
-    "notepad++": [
-        {"url": "https://notepad-plus-plus.org/downloads/", "source": "Notepad++官网"},
-    ],
-    "vlc": [
-        {"url": "https://www.videolan.org/vlc/download-windows.html", "source": "VLC官网"},
-    ],
-    "obs": [
-        {"url": "https://obsproject.com/download", "source": "OBS官网"},
-    ],
-    "telegram": [
-        {"url": "https://desktop.telegram.org/", "source": "Telegram官网"},
-    ],
-    "discord": [
-        {"url": "https://discord.com/download", "source": "Discord官网"},
-    ],
-    "python": [
-        {"url": "https://www.python.org/downloads/", "source": "Python官网"},
-    ],
-    "git": [
-        {"url": "https://git-scm.com/download/win", "source": "Git官网"},
-    ],
-    "putty": [
-        {"url": "https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html", "source": "PuTTY官网"},
-    ],
-    "wireshark": [
-        {"url": "https://www.wireshark.org/download.html", "source": "Wireshark官网"},
-    ],
-    "blender": [
-        {"url": "https://www.blender.org/download/", "source": "Blender官网"},
-    ],
-    "gimp": [
-        {"url": "https://www.gimp.org/downloads/", "source": "GIMP官网"},
-    ],
-    "audacity": [
-        {"url": "https://www.audacityteam.org/download/", "source": "Audacity官网"},
-    ],
-    "ffmpeg": [
-        {"url": "https://ffmpeg.org/download.html", "source": "FFmpeg官网"},
-    ],
-    "nodejs": [
-        {"url": "https://nodejs.org/en/download/", "source": "Node.js官网"},
-    ],
-    "everything": [
-        {"url": "https://www.voidtools.com/", "source": "Everything官网"},
-    ],
-    "aria2": [
-        {"url": "https://github.com/aria2/aria2/releases", "source": "GitHub"},
-    ],
-    "bandizip": [
-        {"url": "https://www.bandisoft.com/bandizip/", "source": "Bandisoft官网"},
-    ],
-    "geek": [
-        {"url": "https://geekuninstaller.com/", "source": "Geek Uninstaller官网"},
-    ],
-    "geek uninstaller": [
-        {"url": "https://geekuninstaller.com/", "source": "Geek Uninstaller官网"},
-    ],
-    "honeyview": [
-        {"url": "https://www.bandisoft.com/honeyview/", "source": "Bandisoft官网"},
-    ],
-    "potplayer": [
-        {"url": "https://potplayer.daum.net/", "source": "PotPlayer官网"},
-    ],
-    "向日葵": [
-        {"url": "https://sunlogin.oray.com/download", "source": "向日葵官网"},
-    ],
-    "todesk": [
-        {"url": "https://www.todesk.com/download.html", "source": "ToDesk官网"},
-    ],
-    "网易云音乐": [
-        {"url": "https://music.163.com/#/download", "source": "网易云音乐官网"},
-    ],
-    "wps": [
-        {"url": "https://www.wps.com/zh-CN/download/", "source": "WPS官网"},
-    ],
-    "百度网盘": [
-        {"url": "https://pan.baidu.com/download", "source": "百度网盘官网"},
-    ],
-}
+
+_CONFIG_FILE = Path(__file__).resolve().parent.parent / "config" / "software_sources.json"
+
+
+def _load_config() -> dict:
+    """从配置文件加载可信源和别名"""
+    try:
+        if _CONFIG_FILE.exists():
+            with open(_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"软件列表": {}, "别名": {}}
+
+
+def _build_trusted_sources() -> Dict[str, List[Dict]]:
+    """从配置构建 TRUSTED_SOURCES 格式"""
+    config = _load_config()
+    # 域名 → 来源名映射
+    domain_label = {
+        "pc.qq.com": "腾讯软件中心",
+        "github.com": "GitHub",
+        "dingtalk.com": "钉钉官网",
+        "google.com": "Google官网",
+        "7-zip.org": "7-Zip官网",
+        "code.visualstudio.com": "VS Code官网",
+        "notepad-plus-plus.org": "Notepad++官网",
+        "videolan.org": "VLC官网",
+        "obsproject.com": "OBS官网",
+        "desktop.telegram.org": "Telegram官网",
+        "discord.com": "Discord官网",
+        "python.org": "Python官网",
+        "git-scm.com": "Git官网",
+        "chiark.greenend.org.uk": "PuTTY官网",
+        "wireshark.org": "Wireshark官网",
+        "blender.org": "Blender官网",
+        "gimp.org": "GIMP官网",
+        "audacityteam.org": "Audacity官网",
+        "ffmpeg.org": "FFmpeg官网",
+        "nodejs.org": "Node.js官网",
+        "voidtools.com": "Everything官网",
+        "bandisoft.com": "Bandisoft官网",
+        "geekuninstaller.com": "Geek Uninstaller官网",
+        "daum.net": "PotPlayer官网",
+        "oray.com": "向日葵官网",
+        "todesk.com": "ToDesk官网",
+        "163.com": "网易云音乐官网",
+        "music.163.com": "网易云音乐官网",
+        "wps.com": "WPS官网",
+        "pan.baidu.com": "百度网盘官网",
+    }
+    sources: Dict[str, List[Dict]] = {}
+    for name, urls in config.get("软件列表", {}).items():
+        items = []
+        for url in urls:
+            from urllib.parse import urlparse
+            domain = urlparse(url).netloc
+            source = "可信源"
+            for d, label in domain_label.items():
+                if d in domain:
+                    source = label
+                    break
+            items.append({"url": url, "source": source})
+        sources[name] = items
+    return sources
+
+
+# 全局缓存，启动时加载一次
+_TRUSTED_SOURCES = _build_trusted_sources()
+_ALIAS_MAP = _load_config().get("别名", {})
 
 # ── 模糊匹配别名 ──
 ALIAS_MAP = {
@@ -320,8 +279,8 @@ def _search_trusted(query: str) -> List[SearchResult]:
     results = []
 
     # 精确匹配
-    for key, items in TRUSTED_SOURCES.items():
-        if q == key or (q in ALIAS_MAP and ALIAS_MAP[q].lower() == key):
+    for key, items in _TRUSTED_SOURCES.items():
+        if q == key or (q in _ALIAS_MAP and _ALIAS_MAP[q].lower() == key):
             for item in items:
                 results.append(SearchResult(
                     name=item["url"].split("/")[-1].split("?")[0],
@@ -334,7 +293,7 @@ def _search_trusted(query: str) -> List[SearchResult]:
 
     # 模糊匹配（如果精确匹配没结果）
     if not results:
-        for key, items in TRUSTED_SOURCES.items():
+        for key, items in _TRUSTED_SOURCES.items():
             if q in key or key in q:
                 for item in items:
                     results.append(SearchResult(
@@ -367,7 +326,7 @@ GITHUB_REPO_MAP = {
 def _search_github_releases(query: str) -> List[SearchResult]:
     q = query.lower().strip()
     if q in ALIAS_MAP:
-        q = ALIAS_MAP[q].lower()
+        q = _ALIAS_MAP[q].lower()
     repo = GITHUB_REPO_MAP.get(q)
     if not repo:
         for key, r in GITHUB_REPO_MAP.items():

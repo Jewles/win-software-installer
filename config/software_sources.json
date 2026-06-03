@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "说明": "在此文件中添加/修改软件的官方下载页面链接。搜索时会优先匹配此列表。",
+  "软件列表": {
+    "微信": [
+      "https://pc.qq.com/detail/0/detail_26320.html"
+    ],
+    "qq": [
+      "https://pc.qq.com/detail/1/detail_26485.html"
+    ],
+    "tim": [
+      "https://pc.qq.com/detail/0/detail_25696.html"
+    ],
+    "企业微信": [
+      "https://work.weixin.qq.com/"
+    ],
+    "腾讯会议": [
+      "https://meeting.tencent.com/download/"
+    ],
+    "钉钉": [
+      "https://www.dingtalk.com/download/"
+    ],
+    "chrome": [
+      "https://www.google.com/chrome/"
+    ],
+    "7zip": [
+      "https://www.7-zip.org/",
+      "https://github.com/ip7z/7zip/releases"
+    ],
+    "7-zip": [
+      "https://www.7-zip.org/"
+    ],
+    "vscode": [
+      "https://code.visualstudio.com/Download"
+    ],
+    "notepad++": [
+      "https://notepad-plus-plus.org/downloads/"
+    ],
+    "vlc": [
+      "https://www.videolan.org/vlc/download-windows.html"
+    ],
+    "obs": [
+      "https://obsproject.com/download"
+    ],
+    "telegram": [
+      "https://desktop.telegram.org/"
+    ],
+    "discord": [
+      "https://discord.com/download"
+    ],
+    "python": [
+      "https://www.python.org/downloads/"
+    ],
+    "git": [
+      "https://git-scm.com/download/win"
+    ],
+    "putty": [
+      "https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html"
+    ],
+    "wireshark": [
+      "https://www.wireshark.org/download.html"
+    ],
+    "blender": [
+      "https://www.blender.org/download/"
+    ],
+    "gimp": [
+      "https://www.gimp.org/downloads/"
+    ],
+    "audacity": [
+      "https://www.audacityteam.org/download/"
+    ],
+    "ffmpeg": [
+      "https://ffmpeg.org/download.html"
+    ],
+    "nodejs": [
+      "https://nodejs.org/en/download/"
+    ],
+    "everything": [
+      "https://www.voidtools.com/"
+    ],
+    "aria2": [
+      "https://github.com/aria2/aria2/releases"
+    ],
+    "bandizip": [
+      "https://www.bandisoft.com/bandizip/"
+    ],
+    "geek": [
+      "https://geekuninstaller.com/"
+    ],
+    "geek uninstaller": [
+      "https://geekuninstaller.com/"
+    ],
+    "honeyview": [
+      "https://www.bandisoft.com/honeyview/"
+    ],
+    "potplayer": [
+      "https://potplayer.daum.net/"
+    ],
+    "向日葵": [
+      "https://sunlogin.oray.com/download"
+    ],
+    "todesk": [
+      "https://www.todesk.com/download.html"
+    ],
+    "网易云音乐": [
+      "https://music.163.com/#/download"
+    ],
+    "wps": [
+      "https://www.wps.com/zh-CN/download/"
+    ],
+    "百度网盘": [
+      "https://pan.baidu.com/download"
+    ]
+  },
+  "别名": {
+    "wx": "微信",
+    "weixin": "微信",
+    "wechat": "微信",
+    "tencent meeting": "腾讯会议",
+    "tencentmeeting": "腾讯会议",
+    "wecom": "企业微信",
+    "wxwork": "企业微信",
+    "code": "vscode",
+    "visual studio code": "vscode",
+    "7z": "7zip",
+    "npp": "notepad++",
+    "obs studio": "obs",
+    "obs-studio": "obs",
+    "tg": "telegram",
+    "电报": "telegram",
+    "git scm": "git",
+    "gitbash": "git",
+    "everything search": "everything",
+    "geek uninstall": "geek uninstaller",
+    "bandi zip": "bandizip",
+    "pot player": "potplayer",
+    "sunlogin": "向日葵",
+    "sunlogin client": "向日葵",
+    "远程控制": "向日葵",
+    "远程桌面": "todesk",
+    "netease": "网易云音乐",
+    "cloudmusic": "网易云音乐",
+    "baidunetdisk": "百度网盘"
+  }
+}
