@@ -575,19 +575,7 @@ class InstallGUI:
                    ).pack(side='right')
 
     def _download_search_result(self, result: SearchResult):
-        """弹窗选目录 → 下载 → 检测捆绑"""
-        # 弹窗让用户选下载目录（默认 app/）
-        default_dir = str(self._app_dir.resolve())
-        download_dir = filedialog.askdirectory(
-            initialdir=default_dir,
-            title='选择下载保存目录（默认 app/）',
-        )
-        if not download_dir:
-            self._log_search('已取消下载')
-            return
-
-        dl_path = Path(download_dir)
-        self._log_search(f'下载到: {dl_path}')
+        """直接下载到 app/ 目录，检测捆绑"""
         self._log_search(f'下载: {result.name}')
 
         # 检测捆绑
@@ -603,14 +591,12 @@ class InstallGUI:
             mb.showwarning('下载被阻止', f'{result.name}\n来源评分过低，可能是垃圾/捆绑软件')
             return
 
-        target = download_to_app(result.url, dl_path, log_callback=self._log_search)
+        target = download_to_app(result.url, self._app_dir, log_callback=self._log_search)
         if target:
-            self._log_search(f'✅ {target.name} 已下载到 {dl_path.name}/')
-            self._log_search('切换到「安装软件」页勾选安装')
-            # 如果下载到了 app/ 目录，自动刷新
-            if dl_path.resolve() == self._app_dir.resolve():
-                if self._current_page == 'install':
-                    self._scan()
+            self._log_search(f'✅ {target.name} 已下载到 app/ 目录')
+            self._log_search('在安装页点击「浏览」选择包目录后安装')
+            if self._current_page == 'install':
+                self._scan()
         else:
             self._log_search('❌ 下载失败')
 
