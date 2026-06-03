@@ -191,10 +191,16 @@ class InstallGUI:
         Button(bf, text='\u25b6  开始安装', font=(FONT[0],13,'bold'),
                bg=ACCENT, fg='white', relief='flat', bd=0, padx=20, pady=4,
                activebackground='#005a9e', command=self._install).pack(side='right', padx=(8,24), pady=8)
+        # 确保 Canvas 渲染完毕再画按钮
+        self._top_canvas.update_idletasks()
         self._draw_top_bar()
 
     def _draw_top_bar(self):
-        c=self._top_canvas; c.delete('all'); w=c.winfo_width() or 800; cx,cw=16,w-32
+        c=self._top_canvas; c.delete('all')
+        # 强制刷新 Canvas 获取正确宽度
+        c.update_idletasks()
+        w=c.winfo_width() or self._main_frame.winfo_width() - 180 or 800
+        cx,cw=16,w-32
         c.create_text(cx,20,text='选择要安装的软件',font=(FONT[0],18,'bold'),fill=TEXT_MAIN,anchor='w')
         py=48; btn_h=30
         c.create_text(cx,py,text='\U0001f4c2 安装包:',font=(FONT[0],10),fill=TEXT_SEC,anchor='w')
