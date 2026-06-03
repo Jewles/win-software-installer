@@ -172,9 +172,8 @@ class InstallGUI:
         self._scroll_frame = sf
 
         # 下：日志区（可拖拽缩放）
-        lf = Frame(pw, bg=LOG_BG)
+        lf = Frame(pw, bg=LOG_BG, height=150)
         pw.add(lf, stretch='never')
-        pw.sash_place(1, 0, pw.winfo_height() - 150)
 
         self._log_text = Text(lf, font=LOG_FONT, bg=LOG_BG, fg=LOG_TEXT,
                               relief='flat', bd=0, padx=8, pady=4, wrap='word',
