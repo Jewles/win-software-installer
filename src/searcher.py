@@ -18,113 +18,113 @@ from urllib.request import Request, urlopen
 # ═══════════════════════════════════════════════
 TRUSTED_SOURCES: Dict[str, List[Dict]] = {
     "微信": [
-        {"url": "https://dldir1.qq.com/weixin/Windows/WeChatSetup.exe", "source": "腾讯官方"},
+        {"url": "https://pc.qq.com/detail/0/detail_26320.html", "source": "腾讯软件中心"},
     ],
     "qq": [
-        {"url": "https://dldir6.qq.com/qq/PCQQ/QQ.exe", "source": "腾讯官方"},
+        {"url": "https://pc.qq.com/detail/1/detail_26485.html", "source": "腾讯软件中心"},
     ],
     "tim": [
-        {"url": "https://dldir1.qq.com/qqfile/qq/TIM3.0/TIM3.4.8.exe", "source": "腾讯官方"},
+        {"url": "https://pc.qq.com/detail/0/detail_25696.html", "source": "腾讯软件中心"},
     ],
     "企业微信": [
-        {"url": "https://work.weixin.qq.com/download/WeCom_Setup.exe", "source": "腾讯官方"},
+        {"url": "https://work.weixin.qq.com/", "source": "企业微信官网"},
     ],
     "腾讯会议": [
-        {"url": "https://meeting.tencent.com/download/WinRelease/腾讯会议.exe", "source": "腾讯官方"},
+        {"url": "https://meeting.tencent.com/download/", "source": "腾讯会议官网"},
     ],
     "钉钉": [
-        {"url": "https://page.dingtalk.com/wow/z/dingtalk/default/dddownload-index", "source": "钉钉官方下载页", "need_redirect": True},
+        {"url": "https://www.dingtalk.com/download/", "source": "钉钉官网"},
     ],
     "chrome": [
-        {"url": "https://dl.google.com/chrome/install/ChromeStandaloneSetup64.exe", "source": "Google官方"},
+        {"url": "https://www.google.com/chrome/", "source": "Chrome官网"},
     ],
     "7zip": [
-        {"url": "https://www.7-zip.org/a/7z2409-x64.exe", "source": "7-Zip官方"},
+        {"url": "https://www.7-zip.org/", "source": "7-Zip官网"},
         {"url": "https://github.com/ip7z/7zip/releases", "source": "GitHub"},
     ],
     "7-zip": [
-        {"url": "https://www.7-zip.org/a/7z2409-x64.exe", "source": "7-Zip官方"},
+        {"url": "https://www.7-zip.org/", "source": "7-Zip官网"},
     ],
     "vscode": [
-        {"url": "https://update.code.visualstudio.com/latest/win32-x64-user/stable", "source": "Microsoft官方"},
+        {"url": "https://code.visualstudio.com/Download", "source": "VS Code官网"},
     ],
     "notepad++": [
-        {"url": "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.Installer.exe", "source": "GitHub"},
+        {"url": "https://notepad-plus-plus.org/downloads/", "source": "Notepad++官网"},
     ],
     "vlc": [
-        {"url": "https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.exe", "source": "VideoLAN官方"},
+        {"url": "https://www.videolan.org/vlc/download-windows.html", "source": "VLC官网"},
     ],
     "obs": [
-        {"url": "https://github.com/obsproject/obs-studio/releases/latest/download/OBS-Studio-30.2.3-Full-Installer-x64.exe", "source": "GitHub"},
+        {"url": "https://obsproject.com/download", "source": "OBS官网"},
     ],
     "telegram": [
-        {"url": "https://telegram.org/dl/desktop/win64", "source": "Telegram官方"},
+        {"url": "https://desktop.telegram.org/", "source": "Telegram官网"},
     ],
     "discord": [
-        {"url": "https://discord.com/api/download?platform=win", "source": "Discord官方"},
+        {"url": "https://discord.com/download", "source": "Discord官网"},
     ],
     "python": [
-        {"url": "https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe", "source": "Python官方"},
+        {"url": "https://www.python.org/downloads/", "source": "Python官网"},
     ],
     "git": [
-        {"url": "https://github.com/git-for-windows/git/releases/latest/download/Git-2.47.0-64-bit.exe", "source": "GitHub"},
+        {"url": "https://git-scm.com/download/win", "source": "Git官网"},
     ],
     "putty": [
-        {"url": "https://the.earth.li/~sgtatham/putty/latest/w64/putty-64bit-installer.msi", "source": "PuTTY官方"},
+        {"url": "https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html", "source": "PuTTY官网"},
     ],
     "wireshark": [
-        {"url": "https://www.wireshark.org/download/win64/Wireshark-4.4.2-x64.exe", "source": "Wireshark官方"},
+        {"url": "https://www.wireshark.org/download.html", "source": "Wireshark官网"},
     ],
     "blender": [
-        {"url": "https://www.blender.org/download/release/Blender4.3/blender-4.3.0-windows-x64.msi", "source": "Blender官方"},
+        {"url": "https://www.blender.org/download/", "source": "Blender官网"},
     ],
     "gimp": [
-        {"url": "https://download.gimp.org/gimp/v2.10/windows/gimp-2.10.38-setup.exe", "source": "GIMP官方"},
+        {"url": "https://www.gimp.org/downloads/", "source": "GIMP官网"},
     ],
     "audacity": [
-        {"url": "https://github.com/audacity/audacity/releases/latest/download/audacity-win-3.7.1-64bit.exe", "source": "GitHub"},
+        {"url": "https://www.audacityteam.org/download/", "source": "Audacity官网"},
     ],
     "ffmpeg": [
-        {"url": "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip", "source": "GitHub"},
+        {"url": "https://ffmpeg.org/download.html", "source": "FFmpeg官网"},
     ],
     "nodejs": [
-        {"url": "https://nodejs.org/dist/v22.12.0/node-v22.12.0-x64.msi", "source": "Node.js官方"},
+        {"url": "https://nodejs.org/en/download/", "source": "Node.js官网"},
     ],
     "everything": [
-        {"url": "https://www.voidtools.com/Everything-1.4.1.1026.x64-Setup.exe", "source": "Voidtools官方"},
+        {"url": "https://www.voidtools.com/", "source": "Everything官网"},
     ],
     "aria2": [
-        {"url": "https://github.com/aria2/aria2/releases/latest/download/aria2-1.37.0-win-64bit-build1.zip", "source": "GitHub"},
+        {"url": "https://github.com/aria2/aria2/releases", "source": "GitHub"},
     ],
     "bandizip": [
-        {"url": "https://dl.bandisoft.com/bandizip.std/BANDIZIP-SETUP-STD-X64.EXE", "source": "Bandisoft官方"},
+        {"url": "https://www.bandisoft.com/bandizip/", "source": "Bandisoft官网"},
     ],
     "geek": [
-        {"url": "https://geekuninstaller.com/geek.7z", "source": "Geek Uninstaller官方"},
+        {"url": "https://geekuninstaller.com/", "source": "Geek Uninstaller官网"},
     ],
     "geek uninstaller": [
-        {"url": "https://geekuninstaller.com/geek.7z", "source": "Geek Uninstaller官方"},
+        {"url": "https://geekuninstaller.com/", "source": "Geek Uninstaller官网"},
     ],
     "honeyview": [
-        {"url": "https://dl.bandisoft.com/honeyview/HONEYVIEW-SETUP.EXE", "source": "Bandisoft官方"},
+        {"url": "https://www.bandisoft.com/honeyview/", "source": "Bandisoft官网"},
     ],
     "potplayer": [
-        {"url": "https://t1.daumcdn.net/potplayer/PotPlayerSetup64.exe", "source": "Daum官方"},
+        {"url": "https://potplayer.daum.net/", "source": "PotPlayer官网"},
     ],
     "向日葵": [
-        {"url": "https://sunlogin.oray.com/download/windows?version=1", "source": "Oray官方"},
+        {"url": "https://sunlogin.oray.com/download", "source": "向日葵官网"},
     ],
     "todesk": [
-        {"url": "https://dl.todesktop.com/230724eoprl5/ToDesk_Setup.exe", "source": "ToDesk官方"},
+        {"url": "https://www.todesk.com/download.html", "source": "ToDesk官网"},
     ],
     "网易云音乐": [
-        {"url": "https://d1.music.126.net/dmusic/netease-cloud-music_2.10.14.203653_win.exe", "source": "网易云音乐官方"},
+        {"url": "https://music.163.com/#/download", "source": "网易云音乐官网"},
     ],
     "wps": [
-        {"url": "https://wps.137432.com/wpsdown/WPS_Setup_18066.exe", "source": "WPS官方"},
+        {"url": "https://www.wps.com/zh-CN/download/", "source": "WPS官网"},
     ],
     "百度网盘": [
-        {"url": "https://pan.baidu.com/download/baidunetdisk/BaiduNetdisk_7.51.0.2.exe", "source": "百度网盘官方"},
+        {"url": "https://pan.baidu.com/download", "source": "百度网盘官网"},
     ],
 }
 
