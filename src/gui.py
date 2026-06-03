@@ -287,6 +287,9 @@ class InstallGUI:
             try:
                 r=runner.install_single(item)
                 if r['status']=='success': ok+=1
+                elif r['status']=='blocked_bundle':
+                    self._log('  ⚠⃣ 已拦截捆绑软件: {}'.format(item.name))
+                    fail+=1
                 else: fail+=1
             except Exception as e: self._log('  异常: {}'.format(e)); fail+=1
         self._log('完成: 成功 {} / 失败 {} / 总计 {}'.format(ok,fail,len(items)))
