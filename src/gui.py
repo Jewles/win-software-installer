@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""安装程序 GUI — 左侧导航 + 右侧可滚动软件列表 + Text 日志"""
+"""安装程序 GUI — 左侧导航（安装 / 搜索）+ 右侧内容切换"""
 
 import sys
 import threading
 from pathlib import Path
-from tkinter import Tk, Canvas, Button, Frame, Text, Scrollbar, filedialog, Label
-from typing import List
+from tkinter import Tk, Canvas, Button, Frame, Text, Scrollbar, filedialog, Label, Entry
+from typing import List, Optional
 
 from src.core import load_app_items, SoftwareItem, InstallRunner
+from src.searcher import background_search, SearchResult, download_with_progress, search_and_select
 
 
 # ── 配色 ──
@@ -172,6 +173,7 @@ class InstallGUI:
         self._checkboxes: List[FlatCheckbutton] = []
         self._running = False
         self._all_checked = True
+        self._searching = False
 
         # ── 布局 ──
         # 左侧导航
@@ -179,35 +181,123 @@ class InstallGUI:
         self._sidebar.pack(fill='y', side='left')
         self._sidebar.pack_propagate(False)
 
+        # 导航标题
         self._sidebar_title = Canvas(self._sidebar, highlightthickness=0,
-                                     bg=SIDEBAR_BG, width=180, height=130)
+                                     bg=SIDEBAR_BG, width=180, height=100)
         self._sidebar_title.pack()
-        self._sidebar_title.create_text(90, 40, text='\U0001f4e6',
+        self._sidebar_title.create_text(90, 35, text='\U0001f4e6',
                                         font=(FONT[0], 36), fill=SIDEBAR_ACT)
-        self._sidebar_title.create_text(90, 78, text='安装助手',
+        self._sidebar_title.create_text(90, 70, text='软件助手',
                                         font=(FONT[0], 16, 'bold'), fill=SIDEBAR_ACT)
-        self._sidebar_title.create_text(90, 100, text='一键部署工具',
-                                        font=(FONT[0], 10), fill=SIDEBAR_TEXT)
 
-        # 右侧主区域
-        main_frame = Frame(self.root, bg=BG)
-        main_frame.pack(fill='both', expand=True, side='right')
+        # 导航按钮容器
+        self._nav_frame = Frame(self._sidebar, bg=SIDEBAR_BG)
+        self._nav_frame.pack(fill='x', pady=(10, 0))
 
-        # -- 顶部工具栏（标题、路径、刷新、浏览） --
-        top_bar = Frame(main_frame, bg=BG, height=90)
+        # 当前选中的导航
+        self._current_page = 'install'
+        self._nav_buttons = {}
+        self._nav_indicators = {}
+
+        # 创建导航按钮
+        self._create_nav_button('install', '\U0001f4e6  安装软件', 0)
+        self._create_nav_button('search', '\U0001f50d  搜索下载', 1)
+
+        # 切换到安装页（默认）
+        self._set_active_nav('install')
+
+        # 右侧主区域容器（会切换内容）
+        self._main_frame = Frame(self.root, bg=BG)
+        self._main_frame.pack(fill='both', expand=True, side='right')
+
+        # ── 当前显示的页面组件引用 ──
+        self._install_widgets = []
+        self._search_widgets = []
+
+        # 先构建安装页
+        self._build_install_page()
+        self.root.after(200, self._safe_scan)
+
+    def _create_nav_button(self, page_id: str, text: str, index: int):
+        """创建一个导航按钮"""
+        frame = Frame(self._sidebar, bg=SIDEBAR_BG, height=44)
+        frame.pack(fill='x', pady=1)
+        frame.pack_propagate(False)
+
+        # 左侧指示条（选中时亮起）
+        indicator = Canvas(frame, highlightthickness=0,
+                           bg=SIDEBAR_BG, width=4, height=44)
+        indicator.pack(side='left', fill='y')
+        indicator.create_rectangle(0, 4, 4, 40, fill=SIDEBAR_BG, outline='')
+
+        # 按钮文字
+        btn = Button(frame, text=text, font=(FONT[0], 12),
+                     bg=SIDEBAR_BG, fg=SIDEBAR_TEXT,
+                     activebackground='#3a3a3a', activeforeground=SIDEBAR_ACT,
+                     relief='flat', bd=0, anchor='w', padx=20,
+                     command=lambda pid=page_id: self._switch_page(pid))
+        btn.pack(fill='both', expand=True, side='right')
+
+        self._nav_buttons[page_id] = btn
+        self._nav_indicators[page_id] = indicator
+
+    def _set_active_nav(self, page_id: str):
+        """高亮选中的导航按钮"""
+        for pid, btn in self._nav_buttons.items():
+            if pid == page_id:
+                btn.configure(bg='#3a3a3a', fg=SIDEBAR_ACT)
+            else:
+                btn.configure(bg=SIDEBAR_BG, fg=SIDEBAR_TEXT)
+
+        # 指示条
+        for pid, ind in self._nav_indicators.items():
+            ind.delete('all')
+            ind.create_rectangle(0, 4, 4, 40,
+                                 fill=ACCENT if pid == page_id else SIDEBAR_BG,
+                                 outline='')
+
+    def _switch_page(self, page_id: str):
+        """切换到指定页面"""
+        if page_id == self._current_page:
+            return
+        self._current_page = page_id
+        self._set_active_nav(page_id)
+
+        # 清空主区域
+        for w in self._main_frame.winfo_children():
+            w.destroy()
+        self._install_widgets.clear()
+        self._search_widgets.clear()
+
+        if page_id == 'install':
+            self._build_install_page()
+        elif page_id == 'search':
+            self._build_search_page()
+
+    # ════════════════════════════════════════
+    # 安装页
+    # ════════════════════════════════════════
+
+    def _build_install_page(self):
+        """构建安装页面"""
+        # -- 顶部工具栏 --
+        top_bar = Frame(self._main_frame, bg=BG, height=90)
         top_bar.pack(fill='x', side='top')
+        self._install_widgets.append(top_bar)
 
         self._top_canvas = Canvas(top_bar, highlightthickness=0, bg=BG, height=90)
         self._top_canvas.pack(fill='x', expand=True)
 
         # -- 可滚动的软件列表 --
-        self._scroll_frame = ScrollableCanvas(main_frame, bg=BG)
+        self._scroll_frame = ScrollableCanvas(self._main_frame, bg=BG)
         self._scroll_frame.pack(fill='both', expand=True, side='top')
+        self._install_widgets.append(self._scroll_frame)
 
         # -- 日志区 --
-        log_frame = Frame(main_frame, bg=LOG_BG, height=80)
+        log_frame = Frame(self._main_frame, bg=LOG_BG, height=80)
         log_frame.pack(fill='x', side='bottom')
         log_frame.pack_propagate(False)
+        self._install_widgets.append(log_frame)
 
         self._log_text = Text(
             log_frame, font=LOG_FONT,
@@ -218,30 +308,30 @@ class InstallGUI:
         self._log_text.pack(fill='both', expand=True)
 
         # -- 底部按钮栏 --
-        self._btn_frame = Frame(main_frame, bg=BG, height=48)
-        self._btn_frame.pack(fill='x', side='bottom')
-        self._btn_frame.pack_propagate(False)
+        btn_frame = Frame(self._main_frame, bg=BG, height=48)
+        btn_frame.pack(fill='x', side='bottom')
+        btn_frame.pack_propagate(False)
+        self._install_widgets.append(btn_frame)
 
-        Button(self._btn_frame, text='全选 / 取消',
+        Button(btn_frame, text='全选 / 取消',
                font=(FONT[0], 11), bg='#e8e8e8', fg=TEXT_MAIN,
                relief='flat', bd=0, padx=12, pady=4,
                activebackground='#d0d0d0', command=self._toggle_all,
                ).pack(side='left', padx=(24, 8), pady=8)
 
-        Button(self._btn_frame, text='退出',
+        Button(btn_frame, text='退出',
                font=(FONT[0], 11), bg='#e8e8e8', fg=TEXT_MAIN,
                relief='flat', bd=0, padx=12, pady=4,
                activebackground='#d0d0d0', command=self.root.destroy,
                ).pack(side='right', padx=8, pady=8)
 
-        Button(self._btn_frame, text='\u25b6  开始安装',
+        Button(btn_frame, text='\u25b6  开始安装',
                font=(FONT[0], 13, 'bold'), bg=ACCENT, fg='white',
                relief='flat', bd=0, padx=20, pady=4,
                activebackground='#005a9e', command=self._install,
                ).pack(side='right', padx=(8, 24), pady=8)
 
         self._draw_top_bar()
-        self.root.after(200, self._safe_scan)
 
     def _draw_top_bar(self):
         c = self._top_canvas
@@ -264,7 +354,7 @@ class InstallGUI:
         btn_h = 26
         btn_top = py - btn_h//2
 
-        self._top_canvas_width = cw  # 保存供后续刷新
+        self._top_canvas_width = cw
 
         # 刷新按钮
         _create_rounded_rect(c, cx+cw-175, btn_top, cx+cw-90, btn_top+btn_h,
@@ -304,8 +394,6 @@ class InstallGUI:
         self._log(f'找到 {len(self._items)} 个安装包')
 
     def _render_items(self):
-        """在可滚动的 interior Frame 里画每一行"""
-        # 清空旧的列表
         for cb in self._checkboxes:
             cb.destroy()
         self._checkboxes.clear()
@@ -319,7 +407,6 @@ class InstallGUI:
                   justify='center').pack(pady=40)
             return
 
-        # 每个软件一行，用一个 Frame
         rh = 48
         cw = max(600, self._top_canvas.winfo_width() - 32)
         cw = max(cw, getattr(self, '_top_canvas_width', 600))
@@ -330,7 +417,6 @@ class InstallGUI:
             row.pack(fill='x', side='top')
             row.pack_propagate(False)
 
-            # 用 Canvas 画这一行的内容（复选框 + 文字）
             row_canvas = Canvas(row, highlightthickness=0,
                                 bg='#f5f5f5' if i % 2 == 0 else '#ffffff',
                                 height=rh)
@@ -351,6 +437,8 @@ class InstallGUI:
                                    font=(FONT[0], 10), fill=TEXT_SEC, anchor='e')
 
     def _log(self, msg):
+        if not hasattr(self, '_log_text') or not self._log_text.winfo_exists():
+            return
         self._log_text.configure(state='normal')
         self._log_text.insert('end', msg + '\n')
         self._log_text.see('end')
@@ -404,6 +492,194 @@ class InstallGUI:
                 fail += 1
         self._log(f'完成: 成功 {ok} / 失败 {fail} / 总计 {len(items)}')
         self._running = False
+
+    # ════════════════════════════════════════
+    # 搜索页
+    # ════════════════════════════════════════
+
+    def _build_search_page(self):
+        """构建搜索下载页面"""
+        # -- 搜索栏 --
+        search_bar = Frame(self._main_frame, bg=BG, height=60)
+        search_bar.pack(fill='x', side='top')
+        self._search_widgets.append(search_bar)
+
+        search_inner = Frame(search_bar, bg=BG)
+        search_inner.pack(expand=True, padx=20, pady=(15, 5), fill='x')
+
+        Label(search_inner, text='搜索软件：', font=(FONT[0], 12),
+              bg=BG, fg=TEXT_MAIN).pack(side='left')
+
+        self._search_entry = Entry(search_inner, font=(FONT[0], 12),
+                                    relief='solid', bd=1, width=30)
+        self._search_entry.pack(side='left', padx=(8, 8), fill='x', expand=True)
+        self._search_entry.bind('<Return>', lambda e: self._do_search())
+
+        Button(search_inner, text='🔍 搜索',
+               font=(FONT[0], 11), bg=ACCENT, fg='white',
+               relief='flat', bd=0, padx=16, pady=4,
+               activebackground='#005a9e', command=self._do_search,
+               ).pack(side='left')
+
+        # -- 搜索结果区域（可滚动） --
+        self._search_result_frame = ScrollableCanvas(self._main_frame, bg=BG)
+        self._search_result_frame.pack(fill='both', expand=True, side='top')
+        self._search_widgets.append(self._search_result_frame)
+
+        # 初始提示
+        interior = self._search_result_frame.interior()
+        self._search_prompt = Label(
+            interior,
+            text='在上方输入软件名称后点击搜索\n例如：微信、7zip、vscode\n\n'
+                 '搜索源：腾讯官方源 / GitHub Releases / DuckDuckGo',
+            font=(FONT[0], 12), fg=TEXT_SEC, bg=BG, justify='center',
+        )
+        self._search_prompt.pack(pady=60)
+
+        # -- 日志区（搜索页共用） --
+        log_frame = Frame(self._main_frame, bg=LOG_BG, height=60)
+        log_frame.pack(fill='x', side='bottom')
+        log_frame.pack_propagate(False)
+        self._search_widgets.append(log_frame)
+
+        self._search_log = Text(
+            log_frame, font=LOG_FONT,
+            bg=LOG_BG, fg=LOG_TEXT,
+            relief='flat', bd=0, padx=8, pady=4,
+            wrap='word', state='disabled', height=3,
+        )
+        self._search_log.pack(fill='both', expand=True)
+
+    def _search_log_write(self, msg: str):
+        if not hasattr(self, '_search_log') or not self._search_log.winfo_exists():
+            return
+        self._search_log.configure(state='normal')
+        self._search_log.insert('end', msg + '\n')
+        self._search_log.see('end')
+        self._search_log.configure(state='disabled')
+        self.root.update_idletasks()
+
+    def _do_search(self):
+        query = self._search_entry.get().strip()
+        if not query:
+            return
+        if self._searching:
+            return
+        self._searching = True
+
+        self._search_log_write(f'搜索: {query}')
+
+        # 清除旧结果
+        interior = self._search_result_frame.interior()
+        for w in interior.winfo_children():
+            w.destroy()
+
+        # 显示加载中
+        self._search_loading = Label(
+            interior, text='⏳ 正在搜索，请稍候…',
+            font=(FONT[0], 12), fg=TEXT_SEC, bg=BG,
+        )
+        self._search_loading.pack(pady=40)
+
+        # 后台搜索
+        background_search(query, callback=self._on_search_done)
+
+    def _on_search_done(self, results: List[SearchResult]):
+        self._searching = False
+        self.root.after(0, lambda: self._render_search_results(results))
+
+    def _render_search_results(self, results: List[SearchResult]):
+        interior = self._search_result_frame.interior()
+        for w in interior.winfo_children():
+            w.destroy()
+
+        if not results:
+            Label(interior, text='没有找到结果，试试其他关键词？',
+                  font=(FONT[0], 12), fg=TEXT_SEC, bg=BG,
+                  justify='center').pack(pady=40)
+            self._search_log_write('未找到结果')
+            return
+
+        self._search_log_write(f'找到 {len(results)} 个结果')
+
+        cw = self._search_result_frame.canvas.winfo_width() or 700
+
+        for i, r in enumerate(results):
+            row = Frame(interior, bg='#f5f5f5' if i % 2 == 0 else '#ffffff',
+                        height=48)
+            row.pack(fill='x', side='top')
+            row.pack_propagate(False)
+
+            row_canvas = Canvas(row, highlightthickness=0,
+                                bg='#f5f5f5' if i % 2 == 0 else '#ffffff',
+                                height=48)
+            row_canvas.pack(fill='both', expand=True)
+
+            # 来源标签
+            source_colors = {
+                '腾讯源': '#00a854',
+                'GitHub': '#24292e',
+                'DuckDuckGo': '#de5833',
+            }
+            src_color = source_colors.get(r.source, '#888888')
+            row_canvas.create_text(16, 14, text=f'[{r.source}]',
+                                   font=(FONT[0], 9, 'bold'), fill=src_color, anchor='w')
+
+            # 软件名
+            row_canvas.create_text(16, 32, text=r.name[:50],
+                                   font=(FONT[0], 10), fill=TEXT_MAIN, anchor='w')
+
+            # 评分
+            score_text = f'评分:{r.score:+d}'
+            score_color = '#00a854' if r.score >= 8 else '#888888'
+            row_canvas.create_text(cw - 200, 14, text=score_text,
+                                   font=(FONT[0], 9), fill=score_color, anchor='w')
+
+            # 下载按钮
+            btn_x = cw - 100
+            btn_id = _create_rounded_rect(
+                row_canvas, btn_x, 10, btn_x + 80, 38,
+                r=5, fill=ACCENT, outline='', tags=f'dl_{i}',
+            )
+            row_canvas.create_text(btn_x + 40, 24, text='⬇ 下载',
+                                   fill='white', font=(FONT[0], 10, 'bold'),
+                                   tags=f'dl_{i}')
+
+            # 点击下载
+            def make_dl_handler(result):
+                return lambda e: self._download_and_install(result)
+            row_canvas.tag_bind(f'dl_{i}', '<Button-1>', make_dl_handler(r))
+
+            # 行点击 → 预览 URL
+            def make_click_handler(result):
+                return lambda e: self._search_log_write(f'选中: {result.url}')
+            for tag in (btn_id, f'dl_{i}'):
+                pass
+            row_canvas.tag_bind('all', '<Button-1>', make_click_handler(r))
+
+    def _download_and_install(self, result: SearchResult):
+        """下载搜索结果中的软件"""
+        self._search_log_write(f'开始下载: {result.name}')
+        self._search_log_write(f'URL: {result.url}')
+
+        target = download_with_progress(
+            result.url, self._cache_dir,
+            log_callback=self._search_log_write,
+        )
+        if target:
+            self._search_log_write(f'下载完成: {target.name}')
+            # 下载后自动转到安装页
+            self._switch_page('install')
+            # 刷新安装列表
+            self._scan()
+            self._search_log_write(f'✅ {result.name} 已下载到 cache/ 目录')
+            self._search_log_write('  在安装页勾选后点击「开始安装」')
+        else:
+            self._search_log_write('❌ 下载失败')
+
+    # ════════════════════════════════════════
+    # 工具方法
+    # ════════════════════════════════════════
 
     @staticmethod
     def _fmt_size(b):
