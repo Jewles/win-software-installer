@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""安装程序 GUI — 左侧导航（安装 / 搜索）+ 右侧内容切换"""
+"""软件安装助手 — 左侧导航（安装 / 搜索）+ 右侧内容切换"""
 
 import sys
 import threading
 import webbrowser
+import urllib.parse
 from pathlib import Path
 from tkinter import Tk, Canvas, Button, Frame, Text, Scrollbar, filedialog, Label, Entry
-from typing import List, Optional
+from typing import List
 
 from src.core import load_app_items, SoftwareItem, InstallRunner
-from src.searcher import background_search, SearchResult
-
 
 # ── 配色 ──
 SIDEBAR_BG   = '#2b2b2b'
@@ -76,7 +75,7 @@ class FlatCheckbutton:
             self._after = self.canvas.after(16, self._tick)
         else:
             self._anim = self._target
-    def set_checked(self, state: bool):
+    def set_checked(self, state):
         self._checked = state; self._anim = 1.0 if state else 0.0
         fill = ACCENT if state else '#ffffff'
         self.canvas.itemconfig(self._box, fill=fill, outline=ACCENT if state else '#cccccc')
@@ -114,7 +113,7 @@ class ScrollableCanvas(Frame):
 class InstallGUI:
     def __init__(self, root: Tk):
         self.root = root
-        self.root.title(u'\u8f6f\u4ef6\u5b89\u88c5\u52a9\u624b')
+        self.root.title('软件安装助手')
         self.root.configure(bg=BG)
         self.root.minsize(820, 560)
         self.root.geometry('900x620')
@@ -127,7 +126,6 @@ class InstallGUI:
         self._checkboxes = []
         self._running = False
         self._all_checked = True
-        self._searching = False
 
         # ── 左侧导航 ──
         self._sidebar = Frame(self.root, bg=SIDEBAR_BG, width=180)
@@ -135,11 +133,11 @@ class InstallGUI:
         self._sidebar_title = Canvas(self._sidebar, highlightthickness=0, bg=SIDEBAR_BG, width=180, height=100)
         self._sidebar_title.pack()
         self._sidebar_title.create_text(90, 35, text='\U0001f4e6', font=(FONT[0], 36), fill=SIDEBAR_ACT)
-        self._sidebar_title.create_text(90, 70, text=u'\u8f6f\u4ef6\u52a9\u624b', font=(FONT[0], 16, 'bold'), fill=SIDEBAR_ACT)
+        self._sidebar_title.create_text(90, 70, text='软件助手', font=(FONT[0], 16, 'bold'), fill=SIDEBAR_ACT)
         self._nav_frame = Frame(self._sidebar, bg=SIDEBAR_BG); self._nav_frame.pack(fill='x', pady=(10,0))
         self._current_page = 'install'; self._nav_buttons = {}; self._nav_indicators = {}
-        self._create_nav_button('install', '\U0001f4e6  \u5b89\u88c5\u8f6f\u4ef6', 0)
-        self._create_nav_button('search', '\U0001f50d  \u641c\u7d22\u4e0b\u8f7d', 1)
+        self._create_nav_button('install', '\U0001f4e6  安装软件', 0)
+        self._create_nav_button('search', '\U0001f50d  搜索下载', 1)
         self._set_active_nav('install')
         self._main_frame = Frame(self.root, bg=BG)
         self._main_frame.pack(fill='both', expand=True, side='right')
@@ -187,43 +185,43 @@ class InstallGUI:
         self._log_text.pack(fill='both', expand=True)
         bf = Frame(self._main_frame, bg=BG, height=48); bf.pack(fill='x', side='bottom'); bf.pack_propagate(False)
         self._install_widgets.append(bf)
-        Button(bf, text=u'\u5168\u9009 / \u53d6\u6d88', font=(FONT[0],11), bg='#e8e8e8',
+        Button(bf, text='全选 / 取消', font=(FONT[0],11), bg='#e8e8e8',
                fg=TEXT_MAIN, relief='flat', bd=0, padx=12, pady=4,
                activebackground='#d0d0d0', command=self._toggle_all).pack(side='left', padx=(24,8), pady=8)
-        Button(bf, text=u'\u9000\u51fa', font=(FONT[0],11), bg='#e8e8e8', fg=TEXT_MAIN,
+        Button(bf, text='退出', font=(FONT[0],11), bg='#e8e8e8', fg=TEXT_MAIN,
                relief='flat', bd=0, padx=12, pady=4, activebackground='#d0d0d0',
                command=self.root.destroy).pack(side='right', padx=8, pady=8)
-        Button(bf, text='\u25b6  \u5f00\u59cb\u5b89\u88c5', font=(FONT[0],13,'bold'),
+        Button(bf, text='\u25b6  开始安装', font=(FONT[0],13,'bold'),
                bg=ACCENT, fg='white', relief='flat', bd=0, padx=20, pady=4,
                activebackground='#005a9e', command=self._install).pack(side='right', padx=(8,24), pady=8)
         self._draw_top_bar()
 
     def _draw_top_bar(self):
         c=self._top_canvas; c.delete('all'); w=c.winfo_width() or 800; cx,cw=16,w-32
-        c.create_text(cx,20,text=u'\u9009\u62e9\u8981\u5b89\u88c5\u7684\u8f6f\u4ef6',font=(FONT[0],18,'bold'),fill=TEXT_MAIN,anchor='w')
+        c.create_text(cx,20,text='选择要安装的软件',font=(FONT[0],18,'bold'),fill=TEXT_MAIN,anchor='w')
         py=48
-        c.create_text(cx,py,text='\U0001f4c2 \u5b89\u88c5\u5305:',font=(FONT[0],10),fill=TEXT_SEC,anchor='w')
+        c.create_text(cx,py,text='\U0001f4c2 安装包:',font=(FONT[0],10),fill=TEXT_SEC,anchor='w')
         self._path_text=c.create_text(cx+75,py,text=str(self._app_dir),font=(FONT[0],10),fill=ACCENT,anchor='w')
         btn_h=26; btn_top=py-13; self._top_canvas_width=cw
         _create_rounded_rect(c,cx+cw-175,btn_top,cx+cw-90,btn_top+btn_h,r=5,fill='#e8e8e8',outline='',tags='refresh')
-        c.create_text(cx+cw-132,btn_top+btn_h//2,text='\U0001f504 \u5237\u65b0',fill=TEXT_MAIN,font=(FONT[0],10,'bold'),tags='refresh')
+        c.create_text(cx+cw-132,btn_top+btn_h//2,text='\U0001f504 刷新',fill=TEXT_MAIN,font=(FONT[0],10,'bold'),tags='refresh')
         c.tag_bind('refresh','<Button-1>',lambda e:self._scan())
         _create_rounded_rect(c,cx+cw-80,btn_top,cx+cw,btn_top+btn_h,r=5,fill=ACCENT,outline='',tags='browse')
-        c.create_text(cx+cw-40,btn_top+btn_h//2,text=u'\u6d4f\u89c8',fill='white',font=(FONT[0],10,'bold'),tags='browse')
+        c.create_text(cx+cw-40,btn_top+btn_h//2,text='浏览',fill='white',font=(FONT[0],10,'bold'),tags='browse')
         c.tag_bind('browse','<Button-1>',lambda e:self._browse())
         hdr_y=78
-        c.create_text(cx+8,hdr_y,text=u'\u8f6f\u4ef6\u540d\u79f0',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
-        c.create_text(cx+230,hdr_y,text=u'\u6587\u4ef6\u540d',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
-        c.create_text(cx+420,hdr_y,text=u'\u7c7b\u578b',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
-        c.create_text(cx+cw-10,hdr_y,text=u'\u5927\u5c0f',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='e')
+        c.create_text(cx+8,hdr_y,text='软件名称',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
+        c.create_text(cx+230,hdr_y,text='文件名',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
+        c.create_text(cx+420,hdr_y,text='类型',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
+        c.create_text(cx+cw-10,hdr_y,text='大小',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='e')
 
     def _safe_scan(self):
         self._top_canvas.update_idletasks(); self._draw_top_bar(); self._scan()
 
     def _scan(self):
-        self._log(u'\u626b\u63cf: {}'.format(self._app_dir.resolve()))
+        self._log('扫描: {}'.format(self._app_dir.resolve()))
         self._items=load_app_items(self._app_dir); self._all_checked=True; self._render_items()
-        self._log(u'\u627e\u5230 {} \u4e2a\u5b89\u88c5\u5305'.format(len(self._items)))
+        self._log('找到 {} 个安装包'.format(len(self._items)))
 
     def _render_items(self):
         for cb in self._checkboxes: cb.destroy()
@@ -231,7 +229,7 @@ class InstallGUI:
         interior=self._scroll_frame.interior()
         for w in interior.winfo_children(): w.destroy()
         if not self._items:
-            Label(interior,text=u'\u6682\u65e0\u5b89\u88c5\u5305\n\u8bf7\u5c06 .exe/.msi \u653e\u5165 app \u76ee\u5f55\n\u6216\u70b9\u51fb\u5de6\u4fa7\u300c\u641c\u7d22\u4e0b\u8f7d\u300d\u7ebf\u4e0a\u83b7\u53d6',
+            Label(interior,text='暂无安装包\n请将 .exe/.msi 放入 app 目录\n或点击左侧「搜索下载」在线获取',
                   font=(FONT[0],12),fg=TEXT_SEC,bg=BG,justify='center').pack(pady=40)
             return
         rh=48; cw=max(600,self._top_canvas.winfo_width()-32); cw=max(cw,getattr(self,'_top_canvas_width',600))
@@ -267,121 +265,82 @@ class InstallGUI:
     def _install(self):
         if self._running: return
         sel=self._get_selected()
-        if not sel: self._log(u'\u6ca1\u6709\u52fe\u9009\u4efb\u4f55\u8f6f\u4ef6'); return
-        if sys.platform!='win32': self._log(u'\u975e Windows \u7cfb\u7edf\uff0c\u65e0\u6cd5\u5b89\u88c5'); return
+        if not sel: self._log('没有勾选任何软件'); return
+        if sys.platform!='win32': self._log('非 Windows 系统，无法安装'); return
         self._running=True; threading.Thread(target=self._exec,args=(sel,),daemon=True).start()
 
     def _exec(self,items):
         runner=InstallRunner(Path.cwd()/'cache',log_callback=self._log)
-        ok=fail=0; self._log(u'\u5f00\u59cb {} \u4e2a\u4efb\u52a1'.format(len(items)))
+        ok=fail=0; self._log('开始 {} 个任务'.format(len(items)))
         for i,item in enumerate(items):
-            self._log(u'[{}/{}] {}'.format(i+1,len(items),item.name))
+            self._log('[{}/{}] {}'.format(i+1,len(items),item.name))
             try:
                 r=runner.install_single(item)
                 if r['status']=='success': ok+=1
                 else: fail+=1
-            except Exception as e: self._log(u'  \u5f02\u5e38: {}'.format(e)); fail+=1
-        self._log(u'\u5b8c\u6210: \u6210\u529f {} / \u5931\u8d25 {} / \u603b\u8ba1 {}'.format(ok,fail,len(items)))
+            except Exception as e: self._log('  异常: {}'.format(e)); fail+=1
+        self._log('完成: 成功 {} / 失败 {} / 总计 {}'.format(ok,fail,len(items)))
         self._running=False
 
-    # ═══════════════ 搜索页（纯浏览器） ═══════════════
+    # ═══════════════ 搜索页（百度风格） ═══════════════
 
     def _build_search_page(self):
-        """浏览器风格搜索页 — 只出结果，每行可点击在浏览器打开"""
-        ab=Frame(self._main_frame,bg='#dee1e6',height=46); ab.pack(fill='x',side='top'); self._search_widgets.append(ab)
-        ai=Frame(ab,bg='#dee1e6'); ai.pack(expand=True,padx=12,pady=6,fill='x')
-        Label(ai,text='\U0001f50d',font=(FONT[0],12),bg='white',fg=TEXT_SEC).pack(side='left')
-        self._search_entry=Entry(ai,font=('Segoe UI',11),relief='flat',bd=0,bg='white',fg=TEXT_MAIN,highlightthickness=0)
-        self._search_entry.pack(side='left',padx=(4,0),fill='x',expand=True,ipady=4)
-        self._search_entry.insert(0,u'\u8f93\u5165\u8f6f\u4ef6\u540d\u79f0\u641c\u7d22\u2026')
-        self._search_entry.bind('<FocusIn>',lambda e:self._search_entry.selection_range(0,'end'))
-        self._search_entry.bind('<Return>',lambda e:self._do_search())
-        Button(ai,text=u'\u641c\u7d22',font=(FONT[0],10,'bold'),bg=ACCENT,fg='white',
-               relief='flat',bd=0,padx=14,pady=2,activebackground='#005a9e',
-               command=self._do_search).pack(side='left',padx=(6,0))
-
-        self._search_result_frame=ScrollableCanvas(self._main_frame,bg='white')
-        self._search_result_frame.pack(fill='both',expand=True,side='top'); self._search_widgets.append(self._search_result_frame)
-        self._show_search_homepage()
-
-        sb=Frame(self._main_frame,bg=LOG_BG,height=28); sb.pack(fill='x',side='bottom'); sb.pack_propagate(False)
-        self._search_widgets.append(sb)
-        self._search_status=Label(sb,text=u'\u5c31\u7eea',font=('Consolas',9),bg=LOG_BG,fg=LOG_TEXT,anchor='w',padx=10)
-        self._search_status.pack(fill='both',expand=True)
-
-    def _show_search_homepage(self):
-        interior=self._search_result_frame.interior()
+        """百度风格搜索页 — 输入关键词打开浏览器去百度搜"""
+        interior=self._main_frame
         for w in interior.winfo_children(): w.destroy()
-        Label(interior,text='\U0001f50d',font=('Segoe UI',48),bg='white',fg='#cccccc').pack(pady=(60,5))
-        Label(interior,text=u'\u641c\u7d22\u8f6f\u4ef6',font=('Segoe UI',16,'bold'),bg='white',fg=TEXT_MAIN).pack(pady=(0,5))
-        Label(interior,text=u'\u5728\u9876\u680f\u8f93\u5165\u8f6f\u4ef6\u540d\u79f0\uff0c\u56de\u8f66\u641c\u7d22\n\u4f8b\u5982\uff1a\u5fae\u4fe1\u30017zip\u3001vscode\u3001\u9489\u9489\n\n\u70b9\u51fb\u7ed3\u679c\u94fe\u63a5\u5c06\u5728\u6d4f\u89c8\u5668\u4e2d\u6253\u5f00\u4e0b\u8f7d\u9875\n\u4e0b\u8f7d\u540e\u5c06\u5b89\u88c5\u5305\u653e\u5165 app/ \u76ee\u5f55\uff0c\u5207\u5230\u5b89\u88c5\u9875\u5b89\u88c5',
-              font=('Segoe UI',10),bg='white',fg=TEXT_SEC,justify='center').pack(pady=(5,30))
-        qf=Frame(interior,bg='white'); qf.pack(pady=10)
-        for i,n in enumerate([u'\u5fae\u4fe1','QQ',u'\u9489\u9489','chrome','vscode','7zip','potplayer','todesk',u'\u7f51\u6613\u4e91\u97f3\u4e50',u'\u767e\u5ea6\u7f51\u76d8']):
-            Button(qf,text=n,font=('Segoe UI',10),bg='#f0f0f0',fg=TEXT_MAIN,relief='flat',bd=0,padx=12,pady=4,
-                   activebackground='#e0e0e0',command=lambda x=n:self._quick_search(x)).grid(row=i//5,column=i%5,padx=4,pady=4)
 
-    def _quick_search(self,name):
-        self._search_entry.delete(0,'end'); self._search_entry.insert(0,name); self._do_search()
+        center=Frame(interior,bg=BG)
+        center.place(relx=0.5,rely=0.4,anchor='center')
 
-    def _log_search(self,msg):
-        if hasattr(self,'_search_status') and self._search_status.winfo_exists():
-            self._search_status.configure(text=msg); self.root.update_idletasks()
+        Label(center,text='百度',font=('Segoe UI',48,'bold'),
+              bg=BG,fg='#4e6ef2').pack(pady=(0,10))
 
-    def _do_search(self):
+        Label(center,text='搜索下载安装包',font=('Segoe UI',14),
+              bg=BG,fg=TEXT_SEC).pack(pady=(0,20))
+
+        sf=Frame(center,bg='white',highlightbackground='#4e6ef2',
+                 highlightthickness=2,bd=0)
+        sf.pack(fill='x',padx=40)
+
+        self._search_entry=Entry(sf,font=('Segoe UI',14),relief='flat',bd=0,bg='white',
+                                  fg=TEXT_MAIN,highlightthickness=0)
+        self._search_entry.pack(side='left',padx=(16,8),fill='x',expand=True,ipady=8)
+        self._search_entry.bind('<Return>',lambda e:self._baidu_search())
+
+        Button(sf,text='百度一下',font=('Segoe UI',12,'bold'),
+               bg='#4e6ef2',fg='white',relief='flat',bd=0,padx=20,pady=6,
+               activebackground='#3a57d0',command=self._baidu_search
+               ).pack(side='right',padx=(4,4))
+
+        Label(center,
+              text='输入软件名称回车 → 百度结果页 → 自行下载安装包\n下载后放到 app/ 目录，切到左侧「安装软件」扫描安装',
+              font=('Segoe UI',10),bg=BG,fg=TEXT_SEC,justify='center'
+              ).pack(pady=(20,5))
+
+        qf=Frame(interior,bg=BG)
+        qf.place(relx=0.5,rely=0.65,anchor='center')
+        Label(qf,text='快捷搜索：',font=('Segoe UI',10),bg=BG,fg=TEXT_SEC).pack(side='left',padx=(0,8))
+        for name in ['微信','QQ','钉钉','chrome','vscode','7zip','potplayer','todesk']:
+            Button(qf,text=name,font=('Segoe UI',10),bg='#e8e8e8',fg=TEXT_MAIN,
+                   relief='flat',bd=0,padx=10,pady=3,activebackground='#d0d0d0',
+                   command=lambda n=name:self._quick_baidu(n)).pack(side='left',padx=3)
+
+        # 底部提示安装包检测
+        status=Frame(interior,bg=LOG_BG,height=28)
+        status.place(relx=0,rely=1,relwidth=1)
+        Label(status,text='安装时自动检测捆绑包',font=('Consolas',9),
+              bg=LOG_BG,fg=LOG_TEXT,anchor='w',padx=10).pack(fill='both',expand=True)
+
+    def _quick_baidu(self,name):
+        self._search_entry.delete(0,'end')
+        self._search_entry.insert(0,name+' 官方下载')
+        self._baidu_search()
+
+    def _baidu_search(self):
         q=self._search_entry.get().strip()
-        if not q or q==u'\u8f93\u5165\u8f6f\u4ef6\u540d\u79f0\u641c\u7d22\u2026': return
-        if self._searching: return
-        self._searching=True; self._log_search(u'\u641c\u7d22: {}'.format(q))
-        interior=self._search_result_frame.interior()
-        for w in interior.winfo_children(): w.destroy()
-        lf=Frame(interior,bg='white'); lf.pack(pady=60)
-        Label(lf,text='\u23f3',font=('Segoe UI',36),bg='white',fg='#cccccc').pack()
-        Label(lf,text=u'\u6b63\u5728\u641c\u7d22\u2026',font=('Segoe UI',12),bg='white',fg=TEXT_SEC).pack(pady=10)
-        background_search(q,callback=self._on_search_done)
-
-    def _on_search_done(self,results):
-        self._searching=False; self.root.after(0,lambda:self._render_search_results(results))
-
-    @staticmethod
-    def _open_url(url):
+        if not q: q='软件下载'
+        url='https://www.baidu.com/s?wd='+urllib.parse.quote(q)
         webbrowser.open(url)
-
-    def _render_search_results(self,results):
-        interior=self._search_result_frame.interior()
-        for w in interior.winfo_children(): w.destroy()
-        if not results:
-            Label(interior,text=u'\u6ca1\u6709\u627e\u5230\u5339\u914d\u7684\u7ed3\u679c \U0001f641\n\u8bd5\u8bd5\u5176\u4ed6\u5173\u952e\u8bcd\uff0c\u6216\u76f4\u63a5\u53bb\u5b98\u7f51\u4e0b\u8f7d\u540e\u653e\u5230 app/ \u76ee\u5f55',
-                  font=('Segoe UI',12),bg='white',fg=TEXT_SEC,justify='center').pack(pady=60)
-            self._log_search(u'\u672a\u627e\u5230\u7ed3\u679c'); return
-        self._log_search(u'\u627e\u5230 {} \u4e2a\u7ed3\u679c'.format(len(results)))
-        cb=Frame(interior,bg='white',height=30); cb.pack(fill='x',padx=20,pady=(10,0)); cb.pack_propagate(False)
-        Label(cb,text=u'\u627e\u5230 {} \u4e2a\u7ed3\u679c  \u2014  \u70b9\u51fb\u94fe\u63a5\u5728\u6d4f\u89c8\u5668\u4e2d\u6253\u5f00'.format(len(results)),
-              font=('Segoe UI',9),bg='white',fg=TEXT_SEC).pack(side='left')
-        src_colors={'可信源':'#00a854','\u817e\u8baf':'#00a854','\u767e\u5ea6\uff1a':'#00a854','Google':'#4285f4','Microsoft':'#00a4ef',
-                    '7-Zip':'#0078d4','GitHub':'#24292e','DuckDuckGo':'#de5833'}
-        for r in results:
-            card=Frame(interior,bg='white',highlightbackground='#e8e8e8',highlightthickness=1,padx=16,pady=10)
-            card.pack(fill='x',padx=20,pady=4)
-            hdr=Frame(card,bg='white'); hdr.pack(fill='x')
-            sc='#888888'
-            for k,v in src_colors.items():
-                if k in r.source or r.source in k: sc=v; break
-            Label(hdr,text='[{}]'.format(r.source),font=('Segoe UI',9,'bold'),bg='white',fg=sc).pack(side='left')
-            nl=Label(hdr,text='  {}'.format(r.name[:60]),font=('Segoe UI',11),bg='white',fg=ACCENT,anchor='w',cursor='hand2')
-            nl.pack(side='left',fill='x',expand=True)
-            nl.bind('<Button-1>',lambda e,url=r.url:self._open_url(url))
-            if r.is_bundle:
-                Label(hdr,text='\u26a0\ufe0f \u6346\u7ed1\u8f6f\u4ef6',font=('Segoe UI',9,'bold'),bg='#fff3cd',fg='#856404',padx=6).pack(side='right',padx=(0,8))
-            scl='#00a854' if r.score>=8 else ('#e68a00' if r.score>=3 else '#888888')
-            Label(hdr,text=u'\u8bc4\u5206:{:+d}'.format(r.score),font=('Segoe UI',9),bg='white',fg=scl).pack(side='right',padx=(0,8))
-            if r.size_hint:
-                Label(hdr,text=r.size_hint,font=('Segoe UI',9),bg='white',fg=TEXT_SEC).pack(side='right',padx=(0,4))
-            ur=Frame(card,bg='white'); ur.pack(fill='x',pady=(4,0))
-            ut=r.url[:90]+'\u2026' if len(r.url)>90 else r.url
-            ul=Label(ur,text=ut,font=('Consolas',8),bg='white',fg='#1a73e8',anchor='w',cursor='hand2')
-            ul.pack(side='left',fill='x',expand=True)
-            ul.bind('<Button-1>',lambda e,url=r.url:self._open_url(url))
 
     @staticmethod
     def _fmt_size(b):
