@@ -287,7 +287,8 @@ class InstallGUI:
         py = 48
         c.create_text(cx, py, text='\U0001f4c2 安装包:', font=(FONT[0], 10), fill=TEXT_SEC, anchor='w')
         self._path_text = c.create_text(cx+75, py, text=str(self._app_dir), font=(FONT[0], 10), fill=ACCENT, anchor='w')
-        btn_h, btn_top = 26, py - btn_h//2
+        btn_h = 26
+        btn_top = py - btn_h // 2
         self._top_canvas_width = cw
         _create_rounded_rect(c, cx+cw-175, btn_top, cx+cw-90, btn_top+btn_h, r=5, fill='#e8e8e8', outline='', tags='refresh')
         c.create_text(cx+cw-132, btn_top+btn_h//2, text='\U0001f504 刷新', fill=TEXT_MAIN, font=(FONT[0], 10, 'bold'), tags='refresh')
