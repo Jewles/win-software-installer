@@ -1,4 +1,4 @@
-§#!/usr/bin/env python3
+#!/usr/bin/env python3
 """搜索下载模块 — 可信源 + 搜索引擎 + 域名评分 + 下载校验 + 捆绑检测"""
 
 import hashlib
