@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""搜索下载模块 — 可信源 + 搜索引擎 + 域名评分 + 下载校验"""
+"""搜索下载模块 — 可信源 + 搜索引擎 + 域名评分 + 下载校验 + 捆绑检测"""
 
 import hashlib
 import re
@@ -9,7 +9,7 @@ import tkinter as tk
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 from urllib.parse import urlparse, quote
 from urllib.request import Request, urlopen
 
@@ -22,7 +22,6 @@ TRUSTED_SOURCES: Dict[str, List[Dict]] = {
     ],
     "qq": [
         {"url": "https://dldir6.qq.com/qq/PCQQ/QQ.exe", "source": "腾讯官方"},
-        {"url": "https://qd.myapp.com/myapp/qqteam/PCQQ/QQ.exe", "source": "腾讯官方"},
     ],
     "tim": [
         {"url": "https://dldir1.qq.com/qqfile/qq/TIM3.0/TIM3.4.8.exe", "source": "腾讯官方"},
@@ -32,6 +31,9 @@ TRUSTED_SOURCES: Dict[str, List[Dict]] = {
     ],
     "腾讯会议": [
         {"url": "https://meeting.tencent.com/download/WinRelease/腾讯会议.exe", "source": "腾讯官方"},
+    ],
+    "钉钉": [
+        {"url": "https://page.dingtalk.com/wow/z/dingtalk/default/dddownload-index", "source": "钉钉官方下载页", "need_redirect": True},
     ],
     "chrome": [
         {"url": "https://dl.google.com/chrome/install/ChromeStandaloneSetup64.exe", "source": "Google官方"},
@@ -45,7 +47,6 @@ TRUSTED_SOURCES: Dict[str, List[Dict]] = {
     ],
     "vscode": [
         {"url": "https://update.code.visualstudio.com/latest/win32-x64-user/stable", "source": "Microsoft官方"},
-        {"url": "https://code.visualstudio.com/sha/download?build=stable&os=win32-x64", "source": "Microsoft官方"},
     ],
     "notepad++": [
         {"url": "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.Installer.exe", "source": "GitHub"},
@@ -113,11 +114,17 @@ TRUSTED_SOURCES: Dict[str, List[Dict]] = {
     "向日葵": [
         {"url": "https://sunlogin.oray.com/download/windows?version=1", "source": "Oray官方"},
     ],
-    "钉钉": [
-        {"url": "https://page.dingtalk.com/wow/z/dingtalk/default/dddownload-index", "source": "钉钉官方下载页", "need_redirect": True},
-    ],
     "todesk": [
         {"url": "https://dl.todesktop.com/230724eoprl5/ToDesk_Setup.exe", "source": "ToDesk官方"},
+    ],
+    "网易云音乐": [
+        {"url": "https://d1.music.126.net/dmusic/netease-cloud-music_2.10.14.203653_win.exe", "source": "网易云音乐官方"},
+    ],
+    "wps": [
+        {"url": "https://wps.137432.com/wpsdown/WPS_Setup_18066.exe", "source": "WPS官方"},
+    ],
+    "百度网盘": [
+        {"url": "https://pan.baidu.com/download/baidunetdisk/BaiduNetdisk_7.51.0.2.exe", "source": "百度网盘官方"},
     ],
 }
 
@@ -131,17 +138,39 @@ ALIAS_MAP = {
     "npp": "notepad++",
     "obs studio": "obs", "obs-studio": "obs",
     "tg": "telegram", "电报": "telegram",
-    "discord": "discord",
     "git scm": "git", "gitbash": "git",
     "winpcap": "wireshark",
     "everything search": "everything",
-    "geek uninstall": "geek uninstaller", "geek卸载": "geek uninstaller",
+    "geek uninstall": "geek uninstaller",
     "bandi zip": "bandizip",
     "pot player": "potplayer",
     "sunlogin": "向日葵", "sunlogin client": "向日葵",
     "远程控制": "向日葵",
     "远程桌面": "todesk",
+    "netease": "网易云音乐", "cloudmusic": "网易云音乐",
+    "baidunetdisk": "百度网盘",
 }
+
+# ── 捆绑/垃圾软件检测特征 ──
+BUNDLE_SIGNATURES: List[Dict] = [
+    # 文件名特征
+    {"type": "filename", "patterns": [
+        "2345", "hao123", "duba", "kingsoft", "金山", "猎豹",
+        "腾讯电脑管家", "360安全卫士", "360软件管家",
+        "拼多多", "快手", "头条", "抖音pc版",
+    ]},
+    # 域名特征
+    {"type": "domain", "patterns": [
+        "2345.com", "hao123.com", "duba.net",
+        "360.cn", "360safe.com",
+    ]},
+    # 安装包名称（精确）
+    {"type": "exact_name", "names": [
+        "2345Explorer", "2345Pic", "2345Browser", "2345Pdf",
+        "2345好压", "好压", "haozip",
+        "电脑管家", "360安全卫士", "360杀毒",
+    ]},
+]
 
 # ── 可信域名评分 ──
 DOMAIN_SCORES = {
@@ -158,9 +187,11 @@ DOMAIN_SCORES = {
     "bandisoft.com": 10, "daum.net": 10,
     "oray.com": 10, "todesktop.com": 10,
     "ninite.com": 5, "chocolatey.org": 5,
+    "126.net": 10, "music.126.com": 10,
+    "baidu.com": 3, "pan.baidu.com": 8,
     "onlinedown.net": -3, "crsky.com": -5,
     "xitongcheng.com": -5, "downza.cn": -3,
-    "baidu.com": -10, "pc6.com": -5,
+    "2345.com": -20, "hao123.com": -20, "pc6.com": -5,
 }
 
 
@@ -172,6 +203,28 @@ class SearchResult:
     source: str = ""
     score: int = 0
     size_hint: str = ""
+    is_bundle: bool = False  # 是否是捆绑/垃圾包
+
+
+def check_is_bundle(name: str, url: str) -> bool:
+    """检查文件是否属于捆绑/垃圾软件"""
+    domain = urlparse(url).netloc.lower()
+    name_lower = name.lower()
+
+    for sig in BUNDLE_SIGNATURES:
+        if sig["type"] == "domain":
+            for p in sig["patterns"]:
+                if p in domain:
+                    return True
+        elif sig["type"] == "filename":
+            for p in sig["patterns"]:
+                if p.lower() in name_lower:
+                    return True
+        elif sig["type"] == "exact_name":
+            for n in sig["names"]:
+                if n.lower() == name_lower or name_lower.startswith(n.lower()):
+                    return True
+    return False
 
 
 # ── 工具函数 ──
@@ -206,7 +259,6 @@ def _resolve_download_url(url: str) -> str:
 
 
 def _download_file(url: str, target_path: Path) -> None:
-    # 根据域名添加 Referer 防盗链
     domain = urlparse(url).netloc.lower()
     referer_map = {
         "dingtalk.com": "https://www.dingtalk.com/",
@@ -219,6 +271,7 @@ def _download_file(url: str, target_path: Path) -> None:
         "google.com": "https://www.google.com/chrome/",
         "dl.google.com": "https://www.google.com/chrome/",
         "daumcdn.net": "https://potplayer.daum.net/",
+        "126.net": "https://music.163.com/",
     }
     referer = "https://www.google.com/"
     for d, r in referer_map.items():
@@ -248,13 +301,11 @@ def _score_result(url: str, snippet: str = "") -> int:
     for known_domain, s in DOMAIN_SCORES.items():
         if known_domain in domain or domain.endswith("." + known_domain):
             score += s
-
     snippet_lower = snippet.lower()
     bad_words = ["高速下载", "捆绑", "推广", "下载器", "插件包", "破解", "绿色版"]
     for w in bad_words:
         if w in snippet_lower:
             score -= 3
-
     good_words = ["官方", "正版", "正式版", "官網", "official", "stable", "release"]
     for w in good_words:
         if w in snippet_lower:
@@ -265,39 +316,12 @@ def _score_result(url: str, snippet: str = "") -> int:
 # ── 引擎 1：可信源数据库 ──
 
 def _search_trusted(query: str) -> List[SearchResult]:
-    """在可信源数据库中查找"""
     q = query.lower().strip()
     results = []
 
     # 精确匹配
-    if q in TRUSTED_SOURCES:
-        for item in TRUSTED_SOURCES[q]:
-            results.append(SearchResult(
-                name=item["url"].split("/")[-1].split("?")[0],
-                url=item["url"],
-                snippet=f"可信源: {item['source']}",
-                source=item["source"],
-                score=10,
-            ))
-        return results
-
-    # 别名匹配
-    if q in ALIAS_MAP:
-        alias_target = ALIAS_MAP[q].lower()
-        if alias_target in TRUSTED_SOURCES:
-            for item in TRUSTED_SOURCES[alias_target]:
-                results.append(SearchResult(
-                    name=item["url"].split("/")[-1].split("?")[0],
-                    url=item["url"],
-                    snippet=f"可信源: {item['source']}",
-                    source=item["source"],
-                    score=10,
-                ))
-        return results
-
-    # 模糊匹配（关键词包含关系）
     for key, items in TRUSTED_SOURCES.items():
-        if q in key or key in q:
+        if q == key or (q in ALIAS_MAP and ALIAS_MAP[q].lower() == key):
             for item in items:
                 results.append(SearchResult(
                     name=item["url"].split("/")[-1].split("?")[0],
@@ -306,6 +330,20 @@ def _search_trusted(query: str) -> List[SearchResult]:
                     source=item["source"],
                     score=10,
                 ))
+            break
+
+    # 模糊匹配（如果精确匹配没结果）
+    if not results:
+        for key, items in TRUSTED_SOURCES.items():
+            if q in key or key in q:
+                for item in items:
+                    results.append(SearchResult(
+                        name=item["url"].split("/")[-1].split("?")[0],
+                        url=item["url"],
+                        snippet=f"可信源: {item['source']}",
+                        source=item["source"],
+                        score=10,
+                    ))
 
     return results
 
@@ -315,7 +353,7 @@ def _search_trusted(query: str) -> List[SearchResult]:
 GITHUB_REPO_MAP = {
     "7zip": "ip7z/7zip", "7-zip": "ip7z/7zip",
     "notepad++": "notepad-plus-plus/notepad-plus-plus",
-    "obs": "obsproject/obs-studio", "obs studio": "obsproject/obs-studio",
+    "obs": "obsproject/obs-studio",
     "vlc": "videolan/vlc",
     "ffmpeg": "BtbN/FFmpeg-Builds",
     "blender": "blender/blender",
@@ -328,12 +366,10 @@ GITHUB_REPO_MAP = {
 
 def _search_github_releases(query: str) -> List[SearchResult]:
     q = query.lower().strip()
-    # 查别名
     if q in ALIAS_MAP:
         q = ALIAS_MAP[q].lower()
     repo = GITHUB_REPO_MAP.get(q)
     if not repo:
-        # 再模糊匹配
         for key, r in GITHUB_REPO_MAP.items():
             if q in key or key in q:
                 repo = r
@@ -366,11 +402,11 @@ def _search_github_releases(query: str) -> List[SearchResult]:
         return []
 
 
-# ── 引擎 3：DuckDuckGo（HTML 解析，无需 API Key）──
+# ── 引擎 3：DuckDuckGo ──
 
 def _search_duckduckgo(query: str) -> List[SearchResult]:
     try:
-        q = quote(f"{query} official download site")
+        q = quote(f"{query} official download")
         url = f"https://html.duckduckgo.com/html/?q={q}"
         req = Request(url=url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -378,7 +414,6 @@ def _search_duckduckgo(query: str) -> List[SearchResult]:
         })
         with urlopen(req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="replace")
-
         results = []
         for match in re.finditer(
             r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
@@ -387,12 +422,14 @@ def _search_duckduckgo(query: str) -> List[SearchResult]:
             href = match.group(1)
             title = re.sub(r"<[^>]+>", "", match.group(2)).strip()
             if any(ext in href.lower() for ext in [".exe", ".msi", ".zip", ".7z"]):
+                is_bundle = check_is_bundle(title, href)
                 results.append(SearchResult(
                     name=title[:60] if title else href.split("/")[-1],
                     url=href,
                     snippet="DuckDuckGo 搜索结果",
                     source="DuckDuckGo",
                     score=_score_result(href),
+                    is_bundle=is_bundle,
                 ))
         return results[:5]
     except Exception:
@@ -402,13 +439,11 @@ def _search_duckduckgo(query: str) -> List[SearchResult]:
 # ── 合并搜索 ──
 
 def search_all(query: str) -> List[SearchResult]:
-    """并行搜索所有引擎，合并去重排序"""
     engines = [
         ("可信源", _search_trusted),
         ("GitHub", _search_github_releases),
         ("DuckDuckGo", _search_duckduckgo),
     ]
-
     all_results = []
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = {pool.submit(fn, query): name for name, fn in engines}
@@ -419,6 +454,7 @@ def search_all(query: str) -> List[SearchResult]:
                     r.source = name
                     if r.score == 0:
                         r.score = _score_result(r.url, r.snippet)
+                    r.is_bundle = r.is_bundle or check_is_bundle(r.name, r.url)
                     all_results.append(r)
             except Exception:
                 pass
@@ -432,7 +468,7 @@ def search_all(query: str) -> List[SearchResult]:
     return ranked[:10]
 
 
-# ── 弹窗 ──
+# ── 弹窗选择 ──
 
 def show_selection_dialog(
     results: List[SearchResult],
@@ -470,7 +506,8 @@ def show_selection_dialog(
 
     for i, r in enumerate(results):
         sz = f" {r.size_hint}" if r.size_hint else ""
-        display = f"[{r.source}]{sz:>8} 评分:{r.score:+d}  {r.name[:50]}"
+        bundle_tag = " ⚠️捆绑" if r.is_bundle else ""
+        display = f"[{r.source}]{sz:>8} 评分:{r.score:+d}{bundle_tag}  {r.name[:50]}"
         listbox.insert(tk.END, display)
 
     if results:
@@ -523,14 +560,16 @@ def search_and_select(query: str) -> Optional[str]:
     return selected.url if selected else None
 
 
-# ── 下载 ──
+# ── 下载（到 app 目录）──
 
-def download_with_progress(
+def download_to_app(
     url: str,
-    target_dir: Path,
+    app_dir: Path,
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> Optional[Path]:
+    """下载文件到 app 目录（检测捆绑包）"""
     log = log_callback or (lambda msg: None)
+
     # 如果不是直接 exe 链接，先解析重定向
     resolved_url = url
     if not url.lower().endswith((".exe", ".msi", ".zip", ".7z")):
@@ -542,7 +581,13 @@ def download_with_progress(
     filename = resolved_url.split("/")[-1].split("?")[0]
     if not filename or "." not in filename:
         filename = "download.exe"
-    target = target_dir / filename
+    target = app_dir / filename
+
+    # 默认检测捆绑
+    is_bundle = check_is_bundle(filename, resolved_url)
+    if is_bundle:
+        log(f"⚠️ 检测到疑似捆绑/垃圾软件: {filename}")
+        return None
 
     log(f"下载: {resolved_url}")
     try:
