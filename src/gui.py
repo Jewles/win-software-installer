@@ -6,7 +6,7 @@ import threading
 import webbrowser
 import urllib.parse
 from pathlib import Path
-from tkinter import Tk, Canvas, Button, Frame, Text, Scrollbar, filedialog, Label, Entry
+from tkinter import Tk, Canvas, Button, Frame, Text, Scrollbar, filedialog, Label, Entry, PanedWindow
 from typing import List
 
 from src.core import load_app_items, SoftwareItem, InstallRunner
@@ -23,15 +23,6 @@ FONT         = ('Segoe UI', 'Microsoft YaHei', 'sans-serif')
 LOG_BG       = '#1e1e1e'
 LOG_TEXT     = '#c0c0c0'
 LOG_FONT     = ('Consolas', 9)
-
-
-def _create_rounded_rect(canvas, x1, y1, x2, y2, r=8, **kw):
-    kw.pop('radius', None)
-    pts = [x1+r, y1, x2-r, y1, x2, y1,
-           x2, y1+r, x2, y2-r, x2, y2,
-           x2-r, y2, x1+r, y2, x1, y2,
-           x1, y2-r, x1, y1+r, x1, y1]
-    return canvas.create_polygon(pts, smooth=True, **kw)
 
 
 class FlatCheckbutton:
@@ -59,22 +50,18 @@ class FlatCheckbutton:
 
     def _click(self):
         self._checked = not self._checked
-        self._target = 1.0 if self._checked else 0.0
-        self._tick()
+        self._target = 1.0 if self._checked else 0.0; self._tick()
     def _tick(self):
         step = 0.15
         self._anim += step if self._checked else -step
         self._anim = max(0.0, min(1.0, self._anim))
-        r = int(255-(255-0x00)*self._anim)
-        g = int(255-(255-0x78)*self._anim)
-        b = int(255-(255-0xD4)*self._anim)
+        r = int(255-(255-0x00)*self._anim); g = int(255-(255-0x78)*self._anim); b = int(255-(255-0xD4)*self._anim)
         fill = f'#{r:02x}{g:02x}{b:02x}'
         self.canvas.itemconfig(self._box, fill=fill, outline=ACCENT if self._anim > 0 else '#cccccc')
         self.canvas.itemconfig(self._check, text='\u2713' if self._anim > 0.5 else '')
         if abs(self._anim - self._target) > 0.01:
             self._after = self.canvas.after(16, self._tick)
-        else:
-            self._anim = self._target
+        else: self._anim = self._target
     def set_checked(self, state):
         self._checked = state; self._anim = 1.0 if state else 0.0
         fill = ACCENT if state else '#ffffff'
@@ -141,7 +128,6 @@ class InstallGUI:
         self._set_active_nav('install')
         self._main_frame = Frame(self.root, bg=BG)
         self._main_frame.pack(fill='both', expand=True, side='right')
-        self._install_widgets = []; self._search_widgets = []
         self._build_install_page()
         self.root.after(200, self._safe_scan)
 
@@ -165,26 +151,38 @@ class InstallGUI:
         if pid==self._current_page: return
         self._current_page=pid; self._set_active_nav(pid)
         for w in self._main_frame.winfo_children(): w.destroy()
-        self._install_widgets.clear(); self._search_widgets.clear()
         if pid=='install': self._build_install_page()
         elif pid=='search': self._build_search_page()
 
     # ═══════════════ 安装页 ═══════════════
 
     def _build_install_page(self):
-        tb = Frame(self._main_frame, bg=BG, height=90); tb.pack(fill='x', side='top'); self._install_widgets.append(tb)
+        # 顶部工具栏
+        tb = Frame(self._main_frame, bg=BG, height=90); tb.pack(fill='x', side='top')
         self._top_canvas = Canvas(tb, highlightthickness=0, bg=BG, height=90)
         self._top_canvas.pack(fill='x', expand=True)
-        sf = ScrollableCanvas(self._main_frame, bg=BG)
-        sf.pack(fill='both', expand=True, side='top'); self._install_widgets.append(sf)
+
+        # 中间：可拖拽分割的上下区域（上=软件列表，下=日志）
+        pw = PanedWindow(self._main_frame, bg=BG, sashwidth=4, sashrelief='ridge')
+        pw.pack(fill='both', expand=True, side='top')
+
+        # 上：软件列表
+        sf = ScrollableCanvas(pw, bg=BG)
+        pw.add(sf, stretch='always')
         self._scroll_frame = sf
-        lf = Frame(self._main_frame, bg=LOG_BG, height=80); lf.pack(fill='x', side='bottom'); lf.pack_propagate(False)
-        self._install_widgets.append(lf)
+
+        # 下：日志区（可拖拽缩放）
+        lf = Frame(pw, bg=LOG_BG)
+        pw.add(lf, stretch='never')
+        pw.sash_place(1, 0, pw.winfo_height() - 150)
+
         self._log_text = Text(lf, font=LOG_FONT, bg=LOG_BG, fg=LOG_TEXT,
-                              relief='flat', bd=0, padx=8, pady=4, wrap='word', state='disabled', height=4)
+                              relief='flat', bd=0, padx=8, pady=4, wrap='word',
+                              state='disabled')
         self._log_text.pack(fill='both', expand=True)
+
+        # 底部按钮栏
         bf = Frame(self._main_frame, bg=BG, height=48); bf.pack(fill='x', side='bottom'); bf.pack_propagate(False)
-        self._install_widgets.append(bf)
         Button(bf, text='全选 / 取消', font=(FONT[0],11), bg='#e8e8e8',
                fg=TEXT_MAIN, relief='flat', bd=0, padx=12, pady=4,
                activebackground='#d0d0d0', command=self._toggle_all).pack(side='left', padx=(24,8), pady=8)
@@ -199,16 +197,23 @@ class InstallGUI:
     def _draw_top_bar(self):
         c=self._top_canvas; c.delete('all'); w=c.winfo_width() or 800; cx,cw=16,w-32
         c.create_text(cx,20,text='选择要安装的软件',font=(FONT[0],18,'bold'),fill=TEXT_MAIN,anchor='w')
-        py=48
+        py=48; btn_h=30
         c.create_text(cx,py,text='\U0001f4c2 安装包:',font=(FONT[0],10),fill=TEXT_SEC,anchor='w')
         self._path_text=c.create_text(cx+75,py,text=str(self._app_dir),font=(FONT[0],10),fill=ACCENT,anchor='w')
-        btn_h=26; btn_top=py-13; self._top_canvas_width=cw
-        _create_rounded_rect(c,cx+cw-175,btn_top,cx+cw-90,btn_top+btn_h,r=5,fill='#e8e8e8',outline='',tags='refresh')
-        c.create_text(cx+cw-132,btn_top+btn_h//2,text='\U0001f504 刷新',fill=TEXT_MAIN,font=(FONT[0],10,'bold'),tags='refresh')
-        c.tag_bind('refresh','<Button-1>',lambda e:self._scan())
-        _create_rounded_rect(c,cx+cw-80,btn_top,cx+cw,btn_top+btn_h,r=5,fill=ACCENT,outline='',tags='browse')
-        c.create_text(cx+cw-40,btn_top+btn_h//2,text='浏览',fill='white',font=(FONT[0],10,'bold'),tags='browse')
-        c.tag_bind('browse','<Button-1>',lambda e:self._browse())
+        self._top_canvas_width=cw
+
+        # 刷新按钮（用真实 Button，Canvas 绘制的按钮在 Windows 可能不可点击）
+        Button(self._top_canvas,text='\U0001f504 刷新',font=(FONT[0],10,'bold'),
+               bg='#e8e8e8',fg=TEXT_MAIN,relief='flat',bd=0,padx=10,pady=2,
+               activebackground='#d0d0d0',command=self._scan
+               ).place(x=cx+cw-170,y=py-btn_h//2,width=85,height=btn_h)
+
+        # 浏览按钮（选择安装包目录）
+        Button(self._top_canvas,text='浏览',font=(FONT[0],10,'bold'),
+               bg=ACCENT,fg='white',relief='flat',bd=0,padx=10,pady=2,
+               activebackground='#005a9e',command=self._browse
+               ).place(x=cx+cw-75,y=py-btn_h//2,width=75,height=btn_h)
+
         hdr_y=78
         c.create_text(cx+8,hdr_y,text='软件名称',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
         c.create_text(cx+230,hdr_y,text='文件名',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
@@ -229,7 +234,7 @@ class InstallGUI:
         interior=self._scroll_frame.interior()
         for w in interior.winfo_children(): w.destroy()
         if not self._items:
-            Label(interior,text='暂无安装包\n请将 .exe/.msi 放入 app 目录\n或点击左侧「搜索下载」在线获取',
+            Label(interior,text='暂无安装包\n请用「浏览」按钮选择目录\n或点击左侧「搜索下载」在线获取',
                   font=(FONT[0],12),fg=TEXT_SEC,bg=BG,justify='center').pack(pady=40)
             return
         rh=48; cw=max(600,self._top_canvas.winfo_width()-32); cw=max(cw,getattr(self,'_top_canvas_width',600))
@@ -285,38 +290,29 @@ class InstallGUI:
     # ═══════════════ 搜索页（百度风格） ═══════════════
 
     def _build_search_page(self):
-        """百度风格搜索页 — 输入关键词打开浏览器去百度搜"""
         interior=self._main_frame
         for w in interior.winfo_children(): w.destroy()
-
         center=Frame(interior,bg=BG)
         center.place(relx=0.5,rely=0.4,anchor='center')
-
         Label(center,text='百度',font=('Segoe UI',48,'bold'),
               bg=BG,fg='#4e6ef2').pack(pady=(0,10))
-
         Label(center,text='搜索下载安装包',font=('Segoe UI',14),
               bg=BG,fg=TEXT_SEC).pack(pady=(0,20))
-
         sf=Frame(center,bg='white',highlightbackground='#4e6ef2',
                  highlightthickness=2,bd=0)
         sf.pack(fill='x',padx=40)
-
         self._search_entry=Entry(sf,font=('Segoe UI',14),relief='flat',bd=0,bg='white',
                                   fg=TEXT_MAIN,highlightthickness=0)
         self._search_entry.pack(side='left',padx=(16,8),fill='x',expand=True,ipady=8)
         self._search_entry.bind('<Return>',lambda e:self._baidu_search())
-
         Button(sf,text='百度一下',font=('Segoe UI',12,'bold'),
                bg='#4e6ef2',fg='white',relief='flat',bd=0,padx=20,pady=6,
                activebackground='#3a57d0',command=self._baidu_search
                ).pack(side='right',padx=(4,4))
-
         Label(center,
               text='输入软件名称回车 → 百度结果页 → 自行下载安装包\n下载后放到 app/ 目录，切到左侧「安装软件」扫描安装',
               font=('Segoe UI',10),bg=BG,fg=TEXT_SEC,justify='center'
               ).pack(pady=(20,5))
-
         qf=Frame(interior,bg=BG)
         qf.place(relx=0.5,rely=0.65,anchor='center')
         Label(qf,text='快捷搜索：',font=('Segoe UI',10),bg=BG,fg=TEXT_SEC).pack(side='left',padx=(0,8))
@@ -324,8 +320,6 @@ class InstallGUI:
             Button(qf,text=name,font=('Segoe UI',10),bg='#e8e8e8',fg=TEXT_MAIN,
                    relief='flat',bd=0,padx=10,pady=3,activebackground='#d0d0d0',
                    command=lambda n=name:self._quick_baidu(n)).pack(side='left',padx=3)
-
-        # 底部提示安装包检测
         status=Frame(interior,bg=LOG_BG,height=28)
         status.place(relx=0,rely=1,relwidth=1)
         Label(status,text='安装时自动检测捆绑包',font=('Consolas',9),
