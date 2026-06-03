@@ -18,6 +18,19 @@ from urllib.request import Request, urlopen
 INSTALLER_EXT = {'.exe', '.msi', '.msp'}
 
 
+# 各类型安装包可尝试的静默参数列表（按优先级自动重试）
+SILENT_ARGS_POOL = {
+    '.exe': [
+        ['/S'],         # Inno Setup / NSIS
+        ['/SILENT'],    # Inno Setup 另一种写法
+        ['/VERYSILENT'],# Inno Setup 完全静默
+        ['/QB'],        # InstallShield 基本静默
+    ],
+    '.msi': [['/quiet', '/norestart']],
+    '.msp': [['/quiet']],
+}
+
+
 @dataclass
 class SoftwareItem:
     name: str                  # 取文件名去除扩展名
@@ -64,14 +77,10 @@ def redact_command(cmd: List[str]) -> str:
     return " ".join(shlex.quote(x) for x in cmd)
 
 
-def guess_silent_args(ext: str) -> List[str]:
-    """根据扩展名推断静默安装参数"""
-    if ext == '.msi':
-        return ['/quiet', '/norestart']
-    if ext == '.msp':
-        return ['/quiet']
-    # .exe — 常见打包工具
-    return ['/S']  # Inno Setup / NSIS 通用
+def guess_silent_args(ext: str, filename: str = '') -> List[str]:
+    """根据扩展名推断静默安装参数（仅返回第一个候选参数）"""
+    pool = SILENT_ARGS_POOL.get(ext, [])
+    return list(pool[0]) if pool else []
 
 
 def load_app_items(app_dir: Path) -> List[SoftwareItem]:
@@ -91,7 +100,7 @@ def load_app_items(app_dir: Path) -> List[SoftwareItem]:
             filename=f.name,
             filepath=f,
             installer_type='msi' if ext == '.msi' else 'exe',
-            silent_args=guess_silent_args(ext),
+            silent_args=guess_silent_args(ext, f.name),
         ))
     return items
 
@@ -113,8 +122,35 @@ class InstallRunner:
         self.log_callback(f"  下载完成 ({target.name}) SHA256: {sha}")
         return sha
 
+    def _try_install(self, item: SoftwareItem, args: List[str]) -> subprocess.CompletedProcess:
+        """执行一次安装尝试"""
+        cmd_display = redact_command([str(item.filepath), *args])
+        self.log_callback(f"  命令: {cmd_display}")
+        return run_install(item.filepath, args, 1200)
+
+    def _show_manual_install_dialog(self, item: SoftwareItem, last_error: str) -> None:
+        """弹窗通知用户手动安装"""
+        try:
+            import tkinter.messagebox as mb
+            mb.showwarning(
+                title=f"{item.name} 安装失败",
+                message=(
+                    f"{item.name} 自动安装没成功，请手动安装一下~\n\n"
+                    f"安装包位置:\n{item.filepath}\n\n"
+                    f"最后一次错误: {last_error}"
+                )
+            )
+        except Exception:
+            pass  # 没 GUI 环境就不弹
+
     def install_single(self, item: SoftwareItem) -> Dict[str, Any]:
-        """安装单个软件，返回结果字典"""
+        """安装单个软件，返回结果字典
+
+        自动重试逻辑：
+        1. 先用默认参数安装
+        2. 失败 → 尝试 SILENT_ARGS_POOL 中其他参数（.exe 有多个候选）
+        3. 全失败 → 弹窗让用户手动安装
+        """
         result: Dict[str, Any] = {
             'name': item.name,
             'status': 'failed',
@@ -126,20 +162,31 @@ class InstallRunner:
         }
         try:
             self.log_callback(f"▶ [{item.name}] 开始安装")
-            args = item.silent_args
-            cmd_display = redact_command([str(item.filepath), *args])
-            self.log_callback(f"  命令: {cmd_display}")
 
-            cp = run_install(item.filepath, args, 1200)
-            result['exit_code'] = cp.returncode
+            ext = item.filepath.suffix.lower()
+            args_pool = SILENT_ARGS_POOL.get(ext, [item.silent_args])
+            last_error: Optional[str] = None
 
-            if cp.returncode == 0:
-                result['status'] = 'success'
-                self.log_callback(f"✓ [{item.name}] 安装成功")
-            else:
-                stderr = (cp.stderr or '').strip()
-                result['error'] = f"exit={cp.returncode}, stderr={stderr[:200]}"
-                self.log_callback(f"✗ [{item.name}] 安装失败: {result['error']}")
+            for idx, args in enumerate(args_pool):
+                tag = "首次" if idx == 0 else f"重试({idx + 1})"
+                self.log_callback(f"  [{tag}] 尝试静默安装")
+                cp = self._try_install(item, args)
+                result['exit_code'] = cp.returncode
+
+                if cp.returncode == 0:
+                    result['status'] = 'success'
+                    self.log_callback(f"✓ [{item.name}] 安装成功")
+                    break
+                else:
+                    stderr = (cp.stderr or '').strip()
+                    last_error = f"exit={cp.returncode}, args={' '.join(args)}"
+                    self.log_callback(f"✗ [{item.name}] {tag}失败: {last_error}")
+
+            if result['status'] != 'success':
+                result['error'] = last_error
+                self.log_callback(f"✗ [{item.name}] 所有静默参数都试过了，放弃自动安装")
+                self._show_manual_install_dialog(item, last_error or "未知错误")
+
         except Exception as e:
             result['error'] = str(e)
             self.log_callback(f"✗ [{item.name}] 异常: {e}")
