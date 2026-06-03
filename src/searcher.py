@@ -114,7 +114,7 @@ TRUSTED_SOURCES: Dict[str, List[Dict]] = {
         {"url": "https://sunlogin.oray.com/download/windows?version=1", "source": "Oray官方"},
     ],
     "钉钉": [
-        {"url": "https://dtapp-pub.dingtalk.com/dingtalk-desktop/win_installer/Release/DingTalkSetup.exe", "source": "钉钉官方"},
+        {"url": "https://page.dingtalk.com/wow/z/dingtalk/default/dddownload-index", "source": "钉钉官方下载页", "need_redirect": True},
     ],
     "todesk": [
         {"url": "https://dl.todesktop.com/230724eoprl5/ToDesk_Setup.exe", "source": "ToDesk官方"},
@@ -184,8 +184,55 @@ def _compute_sha256(file_path: Path) -> str:
     return d.hexdigest()
 
 
+def _resolve_download_url(url: str) -> str:
+    """追踪重定向，找到真正的下载链接"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        req = Request(url=url, headers=headers)
+        req.method = 'HEAD'
+        with urlopen(req, timeout=15) as resp:
+            return resp.url
+    except Exception:
+        pass
+    try:
+        req = Request(url=url, headers=headers)
+        with urlopen(req, timeout=15) as resp:
+            return resp.url
+    except Exception:
+        return url
+
+
 def _download_file(url: str, target_path: Path) -> None:
-    req = Request(url=url, headers={"User-Agent": "Mozilla/5.0"})
+    # 根据域名添加 Referer 防盗链
+    domain = urlparse(url).netloc.lower()
+    referer_map = {
+        "dingtalk.com": "https://www.dingtalk.com/",
+        "dtapp-pub.dingtalk.com": "https://page.dingtalk.com/",
+        "page.dingtalk.com": "https://www.dingtalk.com/",
+        "qq.com": "https://pc.qq.com/",
+        "dldir1.qq.com": "https://pc.qq.com/",
+        "dldir6.qq.com": "https://pc.qq.com/",
+        "tencent.com": "https://meeting.tencent.com/",
+        "google.com": "https://www.google.com/chrome/",
+        "dl.google.com": "https://www.google.com/chrome/",
+        "daumcdn.net": "https://potplayer.daum.net/",
+    }
+    referer = "https://www.google.com/"
+    for d, r in referer_map.items():
+        if d in domain:
+            referer = r
+            break
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Referer": referer,
+        "Accept": "application/octet-stream, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
+    req = Request(url=url, headers=headers)
     with urlopen(req, timeout=120) as resp:
         with target_path.open("wb") as f:
             while True:
@@ -484,14 +531,22 @@ def download_with_progress(
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> Optional[Path]:
     log = log_callback or (lambda msg: None)
-    filename = url.split("/")[-1].split("?")[0]
+    # 如果不是直接 exe 链接，先解析重定向
+    resolved_url = url
+    if not url.lower().endswith((".exe", ".msi", ".zip", ".7z")):
+        log(f"解析下载链接: {url}")
+        resolved_url = _resolve_download_url(url)
+        if resolved_url != url:
+            log(f"重定向到: {resolved_url}")
+
+    filename = resolved_url.split("/")[-1].split("?")[0]
     if not filename or "." not in filename:
         filename = "download.exe"
     target = target_dir / filename
 
-    log(f"下载: {url}")
+    log(f"下载: {resolved_url}")
     try:
-        _download_file(url, target)
+        _download_file(resolved_url, target)
         sha = _compute_sha256(target)
         log(f"✅ 下载完成: {target.name} | SHA256: {sha[:16]}...")
         return target
