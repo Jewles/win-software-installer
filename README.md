@@ -1,6 +1,6 @@
-# 软件安装助手
+# 软件安装助手 🥟
 
-新电脑到手后一键安装常用软件。**带图形界面，不用记命令。**
+新电脑到手后一键批量静默安装常用软件。**图形界面，不用记命令，插 U 盘就能跑。**
 
 ## 使用方法
 
@@ -10,13 +10,13 @@
 
 ```
 sowftware/
-├── app/                    ← 你把安装包放这里
+├── app/                    ← 你放安装包的地方
 │   ├── WeChatWin_4.1.9.exe
 │   ├── ChromeSetup.exe
 │   └── dingtalk_downloader.exe
 ```
 
-> 支持任何 .exe / .msi 文件，不做限制，你要装什么就放什么。
+> 支持任何 .exe / .msi 文件，不做限制，装什么放什么。
 
 ### 2. 运行
 
@@ -24,56 +24,54 @@ sowftware/
 python run.py
 ```
 
-弹出窗口勾选要安装的软件，点「开始安装」。
+弹出窗口 → 勾选软件 → 点击「开始安装」。
 
-### 3. 窗口功能
+## 功能列表
 
 | 功能 | 说明 |
 |------|------|
+| 📁 浏览 | 自定义 `app/` 目录路径 |
 | 🔄 刷新 | 修改了 app/ 目录后刷新列表 |
-| 📁 浏览 | 自定义 app/ 目录路径 |
 | ✅ 全选/取消 | 一键切换所有勾选状态 |
-| 📝 实时日志 | 安装过程实时显示（Text 控件，自动滚动） |
+| ▶️ 开始安装 | 多线程并行下载 + 串行静默安装 |
+| 📝 实时日志 | 底部日志窗口，可拖拽调整高度 |
+| 🔍 搜索下载 | 内置百度快速搜索，找安装包不切浏览器 |
 | 🚪 退出 | 关闭程序 |
 
-### 4. 打包成 exe（推荐）
+### 窗口布局
 
-在 Windows 上跑一次（只需一次），以后新电脑直接双击 `.exe`：
+- **左侧导航**：安装软件 / 搜索下载 两页切换
+- **顶部工具栏**：安装包路径 + 刷新 + 浏览按钮
+- **中部软件列表**：可滚动卡片列表，显示软件名、类型、大小
+- **底部日志**：可拖拽缩放的实时输出窗口
+- **底栏按钮**：全选/取消 + 开始安装 + 退出
 
-```bash
-# 安装打包工具
-python -m pip install pyinstaller
+### 3. 打包成 exe（推荐）
 
-# 打包（无黑框 + 自定义图标）
-pyinstaller --onefile --noconsole --name 安装助手 ^
-  --add-data "ico;ico" --icon=ico\app.ico --distpath . run.py
+在 Windows 上跑一次，以后新电脑双击即用：
+
+```powershell
+pip install pyinstaller
+pyinstaller --onefile --noconsole --name "软件安装助手" --icon ico/app.ico --add-data "ico;ico" --distpath . run.py
 ```
 
-如果不需要自定义图标，简化版：
-
-```bash
-pyinstaller --onefile --noconsole --name 安装助手 run.py
-```
-
-生成 `安装助手.exe`，复制到 U 盘，新电脑上**右键 → 以管理员身份运行**。
+生成 `软件安装助手.exe`，复制到 U 盘，新电脑上**右键 → 以管理员身份运行**。
 
 > 建议 exe 和 `app/` 文件夹放在 U 盘同一级目录，方便增删安装包。
 
-### 5. Windows 打包注意事项
+## 静默安装自动重试
 
-- **管理员身份运行**：部分软件静默安装需要管理员权限
-- app/ 目录保持和 exe 同一层级
-- 用 `--noconsole` 避免弹出 CMD 黑框
+`src/core.py` 中的 `SILENT_ARGS_POOL` 逐次尝试静默参数：
 
-## 静默参数说明
+| 类型 | 尝试顺序 |
+|------|----------|
+| `.exe` | `/S` → `/SILENT` → `/VERYSILENT` → `/QB` |
+| `.msi` | `/quiet /norestart` |
+| `.msp` | `/quiet` |
 
-| 类型 | 默认参数 | 适用 |
-|------|----------|------|
-| `.exe` | `/S` | Inno Setup / NSIS 打包的安装包（大部分国产软件） |
-| `.msi` | `/quiet /norestart` | 微软标准安装包 |
-| `.msp` | `/quiet` | 补丁包 |
+全部失败后弹窗提示用户手动安装。
 
-如果某个软件的静默参数不一样，可以在 `src/core.py` 的 `guess_silent_args()` 里按文件名匹配添加。
+
 
 ## 项目结构
 
@@ -81,12 +79,12 @@ pyinstaller --onefile --noconsole --name 安装助手 run.py
 sowftware/
 ├── run.py                  # 启动入口 → 打开 GUI
 ├── src/
-│   ├── core.py             # 核心逻辑（扫描、下载、安装）
-│   └── gui.py              # 图形界面
+│   ├── core.py             # 核心逻辑（扫描、安装、自动重试）
+│   └── gui.py              # 图形界面（双页安装+搜索）
 ├── app/                    # 你放安装包的地方
 ├── cache/                  # 自动下载的缓存目录
-├── ico/                    # 程序图标
-└── REDME.md
+├── ico/                    # 程序图标（app.ico / app.png）
+└── README.md
 ```
 
 ## 环境要求
@@ -94,3 +92,4 @@ sowftware/
 - Python 3.8+（使用前安装）
 - 或打包后的 `.exe`（零依赖，双击运行）
 - Windows 系统（安装需要管理员权限）
+- 管理员身份运行（部分软件静默安装需要）
