@@ -7,6 +7,7 @@ import webbrowser
 import urllib.parse
 from pathlib import Path
 from tkinter import Tk, Canvas, Button, Frame, Text, Scrollbar, filedialog, Label, Entry, PanedWindow
+import _tkinter
 from typing import List
 
 from src.core import load_app_items, SoftwareItem, InstallRunner
@@ -93,7 +94,7 @@ class ScrollableCanvas(Frame):
                 self.canvas.itemconfig(self._interior_id, width=self.canvas.winfo_width())
         interior.bind('<Configure>', _ci)
         self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig(self._interior_id, width=e.width))
-        self.canvas.bind_all('<MouseWheel>', lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), 'units'))
+        self.canvas.bind('<MouseWheel>', lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), 'units'), add='+')
     def interior(self): return self._interior
 
 
@@ -162,11 +163,11 @@ class InstallGUI:
         self._top_canvas = Canvas(tb, highlightthickness=0, bg=BG, height=90)
         self._top_canvas.pack(fill='x', expand=True)
 
-        # 中间：可拖拽分割的上下区域（上=软件列表，下=日志）
-        pw = PanedWindow(self._main_frame, bg=BG, sashwidth=4, sashrelief='ridge')
+        # 中间可拖拽分割（上=软件列表 stretch，下=日志固定）
+        pw = PanedWindow(self._main_frame, bg=BG, sashwidth=4, sashrelief='ridge', orient='vertical')
         pw.pack(fill='both', expand=True, side='top')
 
-        # 上：软件列表
+        # 上：软件列表（可滚动）
         sf = ScrollableCanvas(pw, bg=BG)
         pw.add(sf, stretch='always')
         self._scroll_frame = sf
@@ -179,9 +180,11 @@ class InstallGUI:
                               relief='flat', bd=0, padx=8, pady=4, wrap='word',
                               state='disabled')
         self._log_text.pack(fill='both', expand=True)
+        # 日志框自己的滚轮事件
+        self._log_text.bind('<MouseWheel>', lambda e: self._log_text.yview_scroll(int(-1*(e.delta/120)), 'units'), add='+')
 
-        # 底部按钮栏
-        bf = Frame(self._main_frame, bg=BG, height=48); bf.pack(fill='x', side='bottom'); bf.pack_propagate(False)
+        # 底部按钮栏（放在 PanedWindow 之外，确保始终可见）
+        bf = Frame(self._main_frame, bg=BG, height=48); bf.pack(fill='x', side='bottom', before=pw); bf.pack_propagate(False)
         Button(bf, text='全选 / 取消', font=(FONT[0],11), bg='#e8e8e8',
                fg=TEXT_MAIN, relief='flat', bd=0, padx=12, pady=4,
                activebackground='#d0d0d0', command=self._toggle_all).pack(side='left', padx=(24,8), pady=8)
@@ -221,8 +224,7 @@ class InstallGUI:
 
         hdr_y=78
         c.create_text(cx+8,hdr_y,text='软件名称',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
-        c.create_text(cx+230,hdr_y,text='文件名',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
-        c.create_text(cx+420,hdr_y,text='类型',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
+        c.create_text(cx+350,hdr_y,text='类型',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='w')
         c.create_text(cx+cw-10,hdr_y,text='大小',font=(FONT[0],9,'bold'),fill=TEXT_SEC,anchor='e')
 
     def _safe_scan(self):
@@ -234,25 +236,28 @@ class InstallGUI:
         self._log('找到 {} 个安装包'.format(len(self._items)))
 
     def _render_items(self):
-        for cb in self._checkboxes: cb.destroy()
-        self._checkboxes.clear()
+        # 先清 GUI 控件（不依赖 canvas），避免 TclError
         interior=self._scroll_frame.interior()
         for w in interior.winfo_children(): w.destroy()
+        # 再清 canvas checkbox，包 try 防 canvas 已被回收
+        for cb in self._checkboxes:
+            try: cb.destroy()
+            except _tkinter.TclError: pass
+        self._checkboxes.clear()
         if not self._items:
             Label(interior,text='暂无安装包\n请用「浏览」按钮选择目录\n或点击左侧「搜索下载」在线获取',
                   font=(FONT[0],12),fg=TEXT_SEC,bg=BG,justify='center').pack(pady=40)
             return
-        rh=48; cw=max(600,self._top_canvas.winfo_width()-32); cw=max(cw,getattr(self,'_top_canvas_width',600))
+        rh=36; cw=max(600,self._top_canvas.winfo_width()-32); cw=max(cw,getattr(self,'_top_canvas_width',600))
         for i,item in enumerate(self._items):
             row=Frame(interior,bg='#f5f5f5' if i%2==0 else '#ffffff',height=rh)
             row.pack(fill='x',side='top'); row.pack_propagate(False)
             rc=Canvas(row,highlightthickness=0,bg='#f5f5f5' if i%2==0 else '#ffffff',height=rh)
             rc.pack(fill='both',expand=True)
             sz=self._fmt_size(item.filepath.stat().st_size); tt='MSI' if item.installer_type=='msi' else 'EXE'
-            cb=FlatCheckbutton(rc,16,(rh-20)//2,text=item.name,subtext=item.filename)
+            cb=FlatCheckbutton(rc,8,(rh-20)//2,text=item.name,subtext='')  # 去掉文件名子项，留白
             self._checkboxes.append(cb)
-            rc.create_text(230,rh//2,text=item.filename,font=(FONT[0],9),fill=TEXT_SEC,anchor='w')
-            rc.create_text(420,rh//2,text='[{}]'.format(tt),font=(FONT[0],10),fill=ACCENT,anchor='w')
+            rc.create_text(340,rh//2,text='[{}]'.format(tt),font=(FONT[0],10),fill=ACCENT,anchor='w')
             rc.create_text(cw-10,rh//2,text=sz,font=(FONT[0],10),fill=TEXT_SEC,anchor='e')
 
     def _log(self,msg):
